@@ -2,6 +2,11 @@
 
 Contexte de handoff pour une session Claude Code sur ce projet.
 
+Note de langue : `README.md` (public, GitHub) est en anglais ; `CLAUDE.md`
+et `ROADMAP.md` (docs internes de handoff) restent en français — choix
+délibéré, pas un oubli de traduction. Ne pas re-traduire le README en
+français sans demande explicite.
+
 ## Ce que c'est
 
 Jeu de golf en TUI, Rust. Mécanique : dé (distance de base) + club choisi +
