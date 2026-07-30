@@ -249,3 +249,17 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
     putting/le vent, qui visent à *réduire* le RNG pur).
   - Réutiliser le panneau "Dernier coup" pour le message plutôt qu'un
     nouveau panneau.
+  - Le "positif" du mélange positif/négatif/neutre ci-dessus peut prendre
+    la forme d'un boost temporaire (ex: dispersion divisée par deux sur le
+    prochain coup) plutôt qu'un simple message flatteur sans effet — un
+    seul type de boost simple pour commencer plutôt qu'un système à
+    plusieurs boosts dès le départ.
+- Récompense (boost) pour un score sous le par sur un trou (birdie ou
+  mieux) : contrairement au boost d'événement aléatoire ci-dessus, celui-ci
+  récompenserait le skill plutôt que la chance — cohérent avec la
+  direction déjà prise avec le vent/le putting (réduire le RNG pur, valoriser
+  la compétence). **Dépendance** : n'a de sens que si le boost s'applique
+  au trou suivant, donc attend l'enchaînement multi-trous (v0.2,
+  "Enchaînement automatique des trous") — pas de vrai "trou suivant"
+  aujourd'hui, `GameState` ne joue que `holes[0]`. À implémenter avec ou
+  après cet item plutôt qu'avant.
