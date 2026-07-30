@@ -164,6 +164,14 @@
          carte" ci-dessous (la sauvegarde de l'éditeur *est* déjà une
          validation) — à réévaluer si un outil de lint séparé reste utile
          une fois le builder construit.
+      6. Estimation des longueurs de coup pendant l'édition, pour placer
+         bunkers/rough/eau/zones à pénalité à bon escient et doser la
+         difficulté du trou (les distances de club viennent d'être
+         recalibrées, voir plus haut — un Driver moyen ≈28 cases, etc.).
+         Réutiliser directement `core::preview_shot`/`ShotPreview` (le même
+         mécanisme qui affiche le guide/halo en jeu) depuis la position du
+         curseur du builder, plutôt que redévelopper un calcul de distance
+         séparé côté édition.
 - [ ] Partage de parcours créés avec le builder — pas encore tranché
       comment, mais un fichier `.course`/`course.yaml` est déjà du texte
       brut : le partage "à la main" (copier le fichier dans le dossier
