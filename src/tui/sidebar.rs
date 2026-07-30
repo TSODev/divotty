@@ -1,4 +1,4 @@
-use crate::core::{Club, Direction, HoleMeta, HoleScore, ScoreLabel, ShotResult, TerrainKind};
+use crate::core::{Club, Direction, HoleMeta, HoleScore, ScoreLabel, ShotResult, TerrainKind, Wind};
 use crate::tui::format::stars;
 use crate::tui::lang::Lang;
 use ratatui::{
@@ -22,6 +22,7 @@ pub struct SidebarState<'a> {
     pub strokes: u8,
     pub club: Club,
     pub aim: Direction,
+    pub wind: Wind,
     pub last_die: Option<u8>,
     pub last_shot: Option<&'a ShotResult>,
     /// Vrai juste après une sauvegarde réussie : affiche une confirmation à
@@ -41,6 +42,7 @@ struct Labels {
     panel_controls: &'static str,
     strokes: &'static str,
     die: &'static str,
+    wind: &'static str,
     club_hint: &'static str,
     controls_body: &'static str,
     ready_message: &'static str,
@@ -59,6 +61,7 @@ fn labels(lang: Lang) -> Labels {
             panel_controls: "Controls",
             strokes: "Strokes",
             die: "Die",
+            wind: "Wind",
             club_hint: "[Tab] next",
             controls_body: "← →  aim\nTab  club\nSpace  play\nZ  zoom\nS  save\nL  language\nqq  quit",
             ready_message: "Ready to play.",
@@ -74,6 +77,7 @@ fn labels(lang: Lang) -> Labels {
             panel_controls: "Contrôles",
             strokes: "Coups",
             die: "Dé",
+            wind: "Vent",
             club_hint: "[Tab] suivant",
             controls_body: "← →  viser\nTab  club\nEspace  jouer\nZ  zoom\nS  sauvegarder\nL  langue\nqq  quitter",
             ready_message: "Prêt à jouer.",
@@ -222,7 +226,7 @@ impl<'a> Widget for SidebarState<'a> {
                 Constraint::Length(4), // Score
                 Constraint::Length(4), // Club
                 Constraint::Length(4), // Dernier coup
-                Constraint::Length(3), // Visée
+                Constraint::Length(4), // Visée (aim + vent)
                 Constraint::Min(0),    // Contrôles
             ])
             .split(area);
@@ -302,7 +306,14 @@ impl<'a> Widget for SidebarState<'a> {
             chunks[5],
             buf,
             l.panel_aim,
-            format!("{} {:.0}°", compass_arrow(self.aim), (angle_deg + 360.0) % 360.0),
+            format!(
+                "{} {:.0}°\n{}: {} {:.1}",
+                compass_arrow(self.aim),
+                (angle_deg + 360.0) % 360.0,
+                l.wind,
+                compass_arrow(self.wind.direction),
+                self.wind.strength
+            ),
         );
 
         let controls_body = if self.quit_confirm {

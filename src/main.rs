@@ -7,7 +7,9 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     execute,
 };
-use crate::core::{preview_shot, resolve_shot, Club, Course, Direction, Hole, Pos, Shot, ShotResult};
+use crate::core::{
+    preview_shot, resolve_shot, Club, Course, Direction, Hole, Pos, Shot, ShotResult, Wind,
+};
 use crate::tui::{CourseMenuState, CourseView, Lang, SidebarState, Viewport};
 use rand::Rng;
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction as LayoutDirection, Layout}, Terminal};
@@ -72,6 +74,21 @@ fn fallback_course() -> Result<Course> {
     })
 }
 
+/// Tire un vent aléatoire (direction + force) au chargement d'un trou.
+/// `core` ne fait qu'appliquer l'effet du vent — c'est `app` qui le tire,
+/// comme le dé, jamais `rand::thread_rng()` à l'intérieur de `core`.
+fn random_wind() -> Wind {
+    let mut rng = rand::thread_rng();
+    let angle: f32 = rng.gen_range(0.0..std::f32::consts::TAU);
+    Wind {
+        direction: Direction {
+            dx: angle.cos(),
+            dy: angle.sin(),
+        },
+        strength: rng.gen_range(0.0..3.0),
+    }
+}
+
 /// Ce qui est persisté d'une partie en cours : juste assez pour retrouver le
 /// parcours sur disque et reprendre exactement où le joueur s'est arrêté.
 #[derive(Serialize, Deserialize)]
@@ -80,6 +97,7 @@ struct SaveData {
     hole_index: usize,
     strokes: u8,
     ball: Pos,
+    wind: Wind,
     club: Club,
     aim: Direction,
 }
@@ -94,6 +112,7 @@ fn save_game(state: &GameState) -> Result<()> {
         hole_index: state.hole_index,
         strokes: state.strokes,
         ball: state.ball,
+        wind: state.wind,
         club: state.club,
         aim: state.aim,
     };
@@ -119,6 +138,7 @@ fn load_game(lang: Lang) -> Result<GameState> {
         course_difficulty: course.difficulty,
         course_dir: Some(data.course_dir),
         ball: data.ball,
+        wind: data.wind,
         strokes: data.strokes,
         club: data.club,
         aim: data.aim,
@@ -140,6 +160,10 @@ struct GameState {
     /// généré en mémoire (pas de fichier à sauvegarder).
     course_dir: Option<PathBuf>,
     ball: Pos,
+    /// Direction et force du vent, tirées au hasard au chargement du trou
+    /// (`random_wind()`) — affecte les coups (sauf le putt) dans
+    /// `resolve_shot`/`preview_shot`.
+    wind: Wind,
     strokes: u8,
     club: Club,
     aim: Direction,
@@ -170,6 +194,7 @@ impl GameState {
             course_difficulty: course.difficulty,
             course_dir,
             ball,
+            wind: random_wind(),
             strokes: 0,
             club: Club::Driver,
             aim,
@@ -190,7 +215,7 @@ impl GameState {
             die_roll: die,
         };
         let mut rng = rand::thread_rng();
-        let result = resolve_shot(&self.hole, self.ball, shot, &mut rng);
+        let result = resolve_shot(&self.hole, self.ball, shot, self.wind, &mut rng);
         self.strokes += 1 + result.penalty_strokes;
         self.ball = result.landing;
         self.aim = Direction::towards(self.ball, self.hole.hole_pos);
@@ -329,6 +354,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                     strokes: state.strokes,
                     club: state.club,
                     aim: state.aim,
+                    wind: state.wind,
                     last_die: state.last_die,
                     last_shot: state.last_shot.as_ref(),
                     just_saved: state.just_saved,
@@ -337,7 +363,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                 columns[0],
             );
 
-            let preview = preview_shot(&state.hole, state.ball, state.club, state.aim);
+            let preview = preview_shot(&state.hole, state.ball, state.club, state.aim, state.wind);
             frame.render_widget(
                 CourseView {
                     hole: &state.hole,

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Version number shown in the sidebar's title panel.
 - Visual zoom (x3) on the map, toggled manually with `Z` (off by default).
   Purely cosmetic — the underlying whole-cell position model is unchanged.
+- Wind: a random direction and strength are rolled when a hole loads, and
+  drift the ball's landing spot downwind (proportional to shot distance —
+  putts are never affected). Shown in the Aim panel next to the player's
+  own aim compass, and factored into the shot preview so it stays accurate.
 
 ### Fixed
 - The tee and hole markers no longer get hidden behind the shot preview

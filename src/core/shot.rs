@@ -85,6 +85,40 @@ pub struct Shot {
     pub die_roll: u8,
 }
 
+/// Vent affectant la trajectoire d'un coup : direction + force. Généré
+/// aléatoirement par `app` (jamais dans `core`) et injecté ici comme le RNG
+/// — `core` ne fait qu'appliquer l'effet, jamais tirer le vent lui-même.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Wind {
+    pub direction: Direction,
+    /// Force du vent, en cases de dérive pour le coup le plus long possible
+    /// (Driver, dé=6) ; les coups plus courts dérivent proportionnellement
+    /// moins. Un putt n'est jamais affecté (balle roulant au sol).
+    pub strength: f32,
+}
+
+impl Default for Wind {
+    /// Vent nul — pratique pour les tests qui ne portent pas sur le vent.
+    fn default() -> Self {
+        Wind {
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            strength: 0.0,
+        }
+    }
+}
+
+/// Décalage (dx, dy) induit par le vent sur un coup donné, proportionnel à
+/// la distance effective du coup (un tir plus long passe plus de temps en
+/// l'air, donc dérive plus) — nul pour un putt.
+fn wind_push(club: Club, effective_distance: f32, wind: Wind) -> (f32, f32) {
+    if matches!(club, Club::Putter) {
+        return (0.0, 0.0);
+    }
+    let max_distance = Club::Driver.base_distance(6);
+    let push = wind.strength * effective_distance / max_distance;
+    (wind.direction.dx * push, wind.direction.dy * push)
+}
+
 /// Résultat de la résolution d'un coup.
 #[derive(Debug, Clone)]
 pub struct ShotResult {
@@ -170,16 +204,23 @@ pub struct ShotPreview {
 /// Calcule l'aperçu de portée/dispersion pour un club et une direction
 /// donnés, depuis la case `from`. Utilisé par l'UI pour afficher une zone
 /// de dispersion visée avant que le joueur ne joue réellement le coup.
-pub fn preview_shot(hole: &Hole, from: Pos, club: Club, direction: Direction) -> ShotPreview {
+pub fn preview_shot(
+    hole: &Hole,
+    from: Pos,
+    club: Club,
+    direction: Direction,
+    wind: Wind,
+) -> ShotPreview {
     let start_terrain = hole.terrain_at(from).unwrap_or(TerrainKind::OutOfBounds);
     let profile = start_terrain.profile();
 
     let landing_for_die = |die: u8| -> Pos {
         let distance = club.base_distance(die) * profile.distance_mult;
-        let x = (from.x as f32 + direction.dx * distance)
+        let (wind_dx, wind_dy) = wind_push(club, distance, wind);
+        let x = (from.x as f32 + direction.dx * distance + wind_dx)
             .round()
             .clamp(0.0, (COURSE_WIDTH - 1) as f32) as usize;
-        let y = (from.y as f32 + direction.dy * distance)
+        let y = (from.y as f32 + direction.dy * distance + wind_dy)
             .round()
             .clamp(0.0, (COURSE_HEIGHT - 1) as f32) as usize;
         Pos { x, y }
@@ -201,7 +242,7 @@ pub fn preview_shot(hole: &Hole, from: Pos, club: Club, direction: Direction) ->
 /// aléatoire, et détermine la case d'arrivée + ses conséquences.
 ///
 /// `rng` est injecté pour permettre des tests déterministes (seed fixe).
-pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, rng: &mut impl Rng) -> ShotResult {
+pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, wind: Wind, rng: &mut impl Rng) -> ShotResult {
     let start_terrain = hole.terrain_at(from).unwrap_or(TerrainKind::OutOfBounds);
     let profile = start_terrain.profile();
 
@@ -219,10 +260,14 @@ pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, rng: &mut impl Rng) -> S
     let deviation_angle: f32 = rng.gen_range(0.0..std::f32::consts::TAU);
     let deviation_amount: f32 = rng.gen_range(0.0..effective_dispersion);
 
+    let (wind_dx, wind_dy) = wind_push(shot.club, effective_distance, wind);
+
     let target_x = from.x as f32 + shot.direction.dx * effective_distance
-        + deviation_angle.cos() * deviation_amount;
+        + deviation_angle.cos() * deviation_amount
+        + wind_dx;
     let target_y = from.y as f32 + shot.direction.dy * effective_distance
-        + deviation_angle.sin() * deviation_amount;
+        + deviation_angle.sin() * deviation_amount
+        + wind_dy;
 
     let mut landing = match find_trajectory_block(hole, from, (target_x, target_y)) {
         Some(blocked_pos) => blocked_pos,
@@ -340,7 +385,7 @@ mod tests {
             die_roll: 6,
         };
         let mut rng = Pcg32::new(7, 7);
-        let result = resolve_shot(&hole, hole.tee, shot, &mut rng);
+        let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
         assert_eq!(result.landing, Pos { x: 1, y: 0 });
         assert_eq!(result.landing_terrain, TerrainKind::Tree);
     }
@@ -369,7 +414,7 @@ mod tests {
             die_roll: 6,
         };
         let mut rng = Pcg32::new(7, 7);
-        let result = resolve_shot(&hole, hole.tee, shot, &mut rng);
+        let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
         assert!(result.landing.x > 10, "la balle devrait survoler l'arbre lointain");
     }
 
@@ -377,7 +422,7 @@ mod tests {
     fn preview_grows_with_die_and_matches_dispersion() {
         let hole = flat_fairway_hole();
         let direction = Direction { dx: 1.0, dy: 0.0 };
-        let preview = preview_shot(&hole, hole.tee, Club::Driver, direction);
+        let preview = preview_shot(&hole, hole.tee, Club::Driver, direction, Wind::default());
 
         assert!(preview.max_landing.x > preview.expected_landing.x);
         assert!(preview.expected_landing.x > hole.tee.x);
@@ -401,9 +446,58 @@ mod tests {
         };
         let mut rng_a = Pcg32::new(42, 54);
         let mut rng_b = Pcg32::new(42, 54);
-        let result_a = resolve_shot(&hole, hole.tee, shot, &mut rng_a);
-        let result_b = resolve_shot(&hole, hole.tee, shot, &mut rng_b);
+        let result_a = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng_a);
+        let result_b = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng_b);
         assert_eq!(result_a.landing, result_b.landing);
+    }
+
+    #[test]
+    fn wind_pushes_the_ball_downwind() {
+        let hole = flat_fairway_hole();
+        let shot = Shot {
+            club: Club::Driver,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 6,
+        };
+        // Vent perpendiculaire à la visée (plein "sud") : ne doit pas
+        // changer la distance parcourue en x, seulement pousser en y.
+        let crosswind = Wind {
+            direction: Direction { dx: 0.0, dy: 1.0 },
+            strength: 3.0,
+        };
+
+        let mut rng_calm = Pcg32::new(9, 9);
+        let calm = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng_calm);
+
+        let mut rng_wind = Pcg32::new(9, 9);
+        let windy = resolve_shot(&hole, hole.tee, shot, crosswind, &mut rng_wind);
+
+        assert!(
+            windy.landing.y > calm.landing.y,
+            "le vent devrait pousser la balle vers le sud (y croissant)"
+        );
+    }
+
+    #[test]
+    fn putter_is_unaffected_by_wind() {
+        let hole = flat_fairway_hole();
+        let shot = Shot {
+            club: Club::Putter,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 4,
+        };
+        let strong_crosswind = Wind {
+            direction: Direction { dx: 0.0, dy: 1.0 },
+            strength: 5.0,
+        };
+
+        let mut rng_calm = Pcg32::new(3, 3);
+        let calm = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng_calm);
+
+        let mut rng_wind = Pcg32::new(3, 3);
+        let windy = resolve_shot(&hole, hole.tee, shot, strong_crosswind, &mut rng_wind);
+
+        assert_eq!(calm.landing, windy.landing, "un putt ne doit jamais être affecté par le vent");
     }
 
     #[test]
@@ -432,7 +526,7 @@ mod tests {
             die_roll: 1,
         };
         let mut rng = Pcg32::new(1, 1);
-        let result = resolve_shot(&hole, hole.tee, shot, &mut rng);
+        let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
         if result.dropped {
             // La pénalité (1 coup) est capturée avant le drop, qui ne fait
             // que replacer la balle : le coup de pénalité reste donc dû.

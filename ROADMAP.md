@@ -38,6 +38,14 @@
       variable (trous courts = grilles compactes, voir v0.4)
 
 ## v0.3 — Visée et feedback
+- [x] Vent (direction + force), tiré aléatoirement au chargement du trou
+      (`random_wind()` dans `main.rs`, jamais `thread_rng()` dans `core`) et
+      appliqué comme une **dérive directionnelle** (pas juste plus de
+      dispersion aléatoire) proportionnelle à la distance du coup — un
+      putt n'est jamais affecté (balle au sol). Pris en compte à la fois
+      par `resolve_shot` et `preview_shot` (l'aperçu reste fiable). Affiché
+      dans le panneau Visée, à côté de la boussole de visée du joueur —
+      pas de 8e panneau.
 - [x] Aperçu visuel de la zone de dispersion avant de jouer (guide de
       trajectoire en pointillés + halo de dispersion + repère d'atterrissage
       moyen, superposés sur la carte)
