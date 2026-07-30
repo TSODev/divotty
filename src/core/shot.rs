@@ -1,5 +1,5 @@
-use crate::course::{Hole, Pos, COURSE_HEIGHT, COURSE_WIDTH};
-use crate::terrain::TerrainKind;
+use crate::core::course::{Hole, Pos, COURSE_HEIGHT, COURSE_WIDTH};
+use crate::core::terrain::TerrainKind;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -268,7 +268,7 @@ pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, rng: &mut impl Rng) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::course::Hole;
+    use crate::core::course::Hole;
     use rand_pcg::Pcg32;
 
     fn flat_fairway_hole() -> Hole {

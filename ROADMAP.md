@@ -1,7 +1,9 @@
 # ROADMAP — Divotty
 
 ## v0.1 — Squelette jouable (fait)
-- [x] Workspace Cargo (`core` / `tui` / `app`)
+- [x] Structure du projet en modules (`core` / `tui`) au sein d'un crate
+      binaire unique `divotty` (a été un workspace à 3 crates, fusionné pour
+      simplifier la publication crates.io — voir `CLAUDE.md`)
 - [x] Types de terrain + profils de jeu (distance, dispersion, pénalités)
 - [x] Format `.course` (frontmatter YAML + grille ASCII 50x25) + parser validé
 - [x] Moteur de résolution de coup (dé + club + terrain + dispersion aléatoire seedable)
@@ -54,6 +56,9 @@
 - [ ] Sons/feedback terminal (bell, ou intégration `cpal` optionnelle)
 - [ ] Thème de couleurs configurable
 - [ ] Parcours à 18 trous complet et équilibré
+- [ ] Publication sur crates.io (`cargo install divotty`) — noms réservés,
+      métadonnées prêtes, `cargo publish --dry-run` validé ; publication
+      réelle pas encore faite (voir `CLAUDE.md`)
 
 ## Idées non priorisées
 - Mode multijoueur local (tour par tour, même terminal)

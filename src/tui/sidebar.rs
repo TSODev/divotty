@@ -1,6 +1,6 @@
-use crate::format::stars;
-use crate::lang::Lang;
-use divotty_core::{Club, Direction, HoleMeta, HoleScore, ScoreLabel, ShotResult, TerrainKind};
+use crate::core::{Club, Direction, HoleMeta, HoleScore, ScoreLabel, ShotResult, TerrainKind};
+use crate::tui::format::stars;
+use crate::tui::lang::Lang;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction as LayoutDirection, Layout, Rect},
@@ -15,7 +15,7 @@ pub struct SidebarState<'a> {
     pub lang: Lang,
     pub hole_meta: &'a HoleMeta,
     /// Difficulté du parcours (1 à 4), purement indicative — voir
-    /// `divotty_core::Course::difficulty`.
+    /// `core::Course::difficulty`.
     pub course_difficulty: u8,
     pub hole_index: usize,
     pub hole_count: usize,

@@ -1,4 +1,6 @@
-//! divotty-core : logique pure du jeu (aucune dépendance UI).
+//! `core` : logique pure du jeu (aucune dépendance à `ratatui`/`crossterm`,
+//! voir CLAUDE.md — cette frontière est une convention de module, plus une
+//! séparation de crate, depuis la fusion en un seul package).
 //!
 //! - `terrain` : types de cases et leurs profils de jeu
 //! - `course`  : structure de grille, parsing des fichiers `.course`, validation

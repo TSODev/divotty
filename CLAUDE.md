@@ -28,22 +28,24 @@ seule règle de zone basse (pas une simulation d'arc de trajectoire).
 
 ## Principes directeurs (techniques)
 
-- **`core` est pur** : aucune dépendance à `ratatui`/`crossterm`. Toute la
-  logique de jeu (types, résolution de coup, scoring, parsing de carte) doit
-  rester testable unitairement sans terminal. Le RNG est toujours injecté
-  (`impl Rng`) pour permettre des tests déterministes avec seed fixe — ne
-  jamais appeler `rand::thread_rng()` à l'intérieur de `core`, seulement dans
-  `app` (la boucle de jeu réelle).
-- **`core` reste sémantique, jamais de texte affichable en dur** : depuis
-  l'introduction du multilingue, `core` ne retourne que des enums (ex.
-  `ScoreLabel`, `TerrainKind`) — c'est `tui` qui traduit vers du texte selon
-  la `Lang` choisie. Ne jamais réintroduire une `&str`/`String` figée dans
-  `core` pour quelque chose que le joueur voit à l'écran.
+- **Un seul crate, mais la frontière `core`/`tui` reste une règle à
+  respecter** : le workspace à 3 crates (`divotty-core`/`divotty-tui`/
+  `divotty`) a été fusionné en un unique package binaire `divotty` pour
+  permettre une publication crates.io simple (voir plus bas). La séparation
+  n'est donc plus imposée par le compilateur (frontière de crate), mais
+  reste une convention de module à respecter par discipline :
+  - `src/core/` ne doit jamais importer `ratatui`/`crossterm`. Toute la
+    logique de jeu (types, résolution de coup, scoring, parsing de carte)
+    doit rester testable unitairement sans terminal. Le RNG est toujours
+    injecté (`impl Rng`) pour des tests déterministes — ne jamais appeler
+    `rand::thread_rng()` dans `src/core/`, seulement dans `src/main.rs`.
+  - `src/core/` reste sémantique, jamais de texte affichable en dur : il ne
+    retourne que des enums (ex. `ScoreLabel`, `TerrainKind`) — c'est
+    `src/tui/` qui traduit vers du texte selon la `Lang` choisie.
 - **Extensibilité des terrains** : ajouter un nouveau type de terrain se fait
-  uniquement dans `src/core/src/terrain.rs` (variante enum + caractère +
-  profil).
-  Le moteur de résolution (`shot.rs`) ne doit jamais avoir de `match` sur
-  `TerrainKind` — il consomme uniquement `TerrainProfile`.
+  uniquement dans `src/core/terrain.rs` (variante enum + caractère + profil).
+  Le moteur de résolution (`src/core/shot.rs`) ne doit jamais avoir de
+  `match` sur `TerrainKind` — il consomme uniquement `TerrainProfile`.
 - **Format `.course` stable** : c'est un contrat avec le contenu (les
   fichiers de parcours). Toute modification du format (nouveaux caractères,
   structure du frontmatter) doit rester rétro-compatible ou s'accompagner
@@ -53,37 +55,44 @@ seule règle de zone basse (pas une simulation d'arc de trajectoire).
   qu'au parcours.
 - **Grille 25x50 vs terminal** : la carte est presque toujours plus grande
   que le terminal visible. Le rendu passe systématiquement par un `Viewport`
-  qui centre sur la balle (`src/tui/src/render.rs`) — ne pas tenter d'afficher
+  qui centre sur la balle (`src/tui/render.rs`) — ne pas tenter d'afficher
   toute la grille d'un coup.
-- **Chemins relatifs au cwd, pas au crate** : `courses/` et `save.yaml` sont
-  résolus par `app` relativement au répertoire courant d'exécution, pas à
-  l'emplacement du crate. Le jeu doit être lancé depuis la racine du dépôt
-  (`cargo run -p divotty`), pas depuis `src/app/`.
+- **Chemins relatifs au cwd, pas au binaire** : `courses/` et `save.yaml`
+  sont résolus relativement au répertoire courant d'exécution. Lancer le
+  jeu depuis la racine du dépôt (`cargo run`). Si `courses/` est absent
+  (ex. après un `cargo install`), un parcours de secours généré en mémoire
+  prend le relais — voir `fallback_course()` dans `src/main.rs`.
 
 ## Architecture (rappel rapide)
 
 ```
-src/core → terrain.rs   (types + profils)
-           course.rs     (grille + parser + Course::discover pour lister les parcours d'un dossier)
-           shot.rs        (résolution de coup + ShotPreview/preview_shot pour l'aperçu avant de jouer)
-           scoring.rs      (HoleScore/Scorecard, ScoreLabel sémantique — pas de texte)
+src/core/  → terrain.rs   (types + profils)
+             course.rs     (grille + parser + Course::discover pour lister les parcours d'un dossier)
+             shot.rs        (résolution de coup + ShotPreview/preview_shot pour l'aperçu avant de jouer)
+             scoring.rs      (HoleScore/Scorecard, ScoreLabel sémantique — pas de texte)
+             mod.rs           (ré-exports publics du module core)
 
-src/tui  → render.rs    (CourseView + Viewport, superpose le guide de trajectoire + halo de dispersion)
-           sidebar.rs     (7 panneaux d'info : Titre, Trou, Score, Club, Dernier coup, Visée, Contrôles)
-           menu.rs         (CourseMenuState : écran de sélection de parcours)
-           lang.rs          (Lang { En, Fr }, défaut En — bascule avec la touche L)
-           format.rs         (helpers d'affichage partagés, ex. étoiles de difficulté)
+src/tui/   → render.rs    (CourseView + Viewport, superpose le guide de trajectoire + halo de dispersion)
+             sidebar.rs     (7 panneaux d'info : Titre, Trou, Score, Club, Dernier coup, Visée, Contrôles)
+             menu.rs         (CourseMenuState : écran de sélection de parcours)
+             lang.rs          (Lang { En, Fr }, défaut En — bascule avec la touche L)
+             format.rs         (helpers d'affichage partagés, ex. étoiles de difficulté)
+             mod.rs             (ré-exports publics du module tui)
 
-src/app  → main.rs (menu de sélection → GameState → boucle de jeu ; sauvegarde/reprise ; gestion clavier)
+src/main.rs → `mod core; mod tui;` + menu de sélection → GameState → boucle
+              de jeu ; sauvegarde/reprise ; gestion clavier
 
 courses/demo → parcours d'exemple à 1 trou (course.yaml avec difficulty + hole_01.course)
 ```
 
-Les trois crates vivent sous `src/` (regroupement demandé explicitement,
-non idiomatique pour un workspace Cargo mais choix assumé) ; `Cargo.toml`
-à la racine référence `members = ["src/core", "src/tui", "src/app"]`. Les
-dépendances relatives entre crates (`path = "../core"` etc.) n'ont pas
-changé, seule la liste `members` a bougé.
+**Historique** : c'était un workspace Cargo à 3 crates (`divotty-core`,
+`divotty-tui`, `divotty`) sous `src/core`, `src/tui`, `src/app`, chacun avec
+son propre `Cargo.toml`. Fusionné en un seul package pour publier sur
+crates.io sans devoir publier 3 crates séparés (une dépendance `path` avec
+version doit pointer vers un crate déjà publié — donc publier `divotty` seul
+imposait de fusionner). Les anciens `lib.rs` de chaque crate sont devenus de
+simples `mod.rs`, et les imports inter-crates (`divotty_core::X`,
+`divotty_tui::Y`) sont devenus `crate::core::X`, `crate::tui::Y`.
 
 ## État du projet (au moment de ce handoff)
 
@@ -139,9 +148,20 @@ Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Système de "drop" plus réaliste (actuellement : retour pur et simple à la
   position de départ du coup — une vraie implémentation dropperait au dernier
   point de fairway valide le long de la trajectoire).
-- Tests d'intégration sur la boucle de jeu complète (`src/app/`) — les tests
-  actuels couvrent uniquement `core` (13 tests entre `course.rs` et
-  `shot.rs`).
+- Tests d'intégration sur la boucle de jeu complète (`src/main.rs`) — les
+  tests actuels couvrent uniquement le module `core` (13 tests entre
+  `course.rs` et `shot.rs`).
+
+## Publication crates.io
+
+Objectif en cours : réserver le nom `divotty` et publier une version
+initiale sur crates.io. Noms `divotty`/`divotty-core`/`divotty-tui` libres
+au moment de la vérification. Compte crates.io déjà authentifié en local
+(`cargo login` fait, credentials dans `~/.cargo/credentials.toml`).
+`cargo publish --dry-run` passe intégralement sur le crate fusionné. La
+publication réelle (`cargo publish`) n'a pas encore été exécutée — c'est
+une action irréversible (impossible de supprimer une version, seulement la
+« yank »), à confirmer explicitement avec l'utilisateur avant de la lancer.
 
 ## Contraintes d'environnement rencontrées
 

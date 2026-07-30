@@ -1,6 +1,6 @@
-use crate::format::stars;
-use crate::lang::Lang;
-use divotty_core::Course;
+use crate::core::Course;
+use crate::tui::format::stars;
+use crate::tui::lang::Lang;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

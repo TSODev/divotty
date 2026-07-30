@@ -1,4 +1,4 @@
-use crate::terrain::TerrainKind;
+use crate::core::terrain::TerrainKind;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -245,7 +245,7 @@ mod tests {
     fn loads_demo_course_from_disk() {
         // Vérifie que le fichier .course d'exemple fourni dans courses/demo/
         // parse correctement (sert de test de non-régression sur le format).
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../courses/demo");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("courses/demo");
         let course = Course::load_from_dir(&dir).expect("le parcours de démo doit charger");
         assert_eq!(course.holes.len(), 1);
         assert_eq!(course.holes[0].meta.par, 4);
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn discovers_demo_course_on_disk() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../courses");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("courses");
         let courses = Course::discover(&root).expect("la découverte doit réussir");
         assert!(courses
             .iter()

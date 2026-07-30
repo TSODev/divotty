@@ -1,11 +1,14 @@
+mod core;
+mod tui;
+
 use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     execute,
 };
-use divotty_core::{preview_shot, resolve_shot, Club, Course, Direction, Hole, Pos, Shot, ShotResult};
-use divotty_tui::{CourseMenuState, CourseView, Lang, SidebarState, Viewport};
+use crate::core::{preview_shot, resolve_shot, Club, Course, Direction, Hole, Pos, Shot, ShotResult};
+use crate::tui::{CourseMenuState, CourseView, Lang, SidebarState, Viewport};
 use rand::Rng;
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction as LayoutDirection, Layout}, Terminal};
 use serde::{Deserialize, Serialize};
@@ -33,8 +36,8 @@ fn discover_courses() -> Result<Vec<(Option<PathBuf>, Course)>> {
 fn fallback_course() -> Result<Course> {
     // Trou de secours généré en mémoire : fairway droit, un bunker, un peu
     // d'eau sur le côté, green autour du trou.
-    let width = divotty_core::COURSE_WIDTH;
-    let height = divotty_core::COURSE_HEIGHT;
+    let width = crate::core::COURSE_WIDTH;
+    let height = crate::core::COURSE_HEIGHT;
     let mut lines = Vec::with_capacity(height);
     for y in 0..height {
         let mut row = vec!['.'; width];

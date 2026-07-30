@@ -1,4 +1,4 @@
-use divotty_core::{Hole, Pos, ShotPreview, TerrainKind};
+use crate::core::{Hole, Pos, ShotPreview, TerrainKind};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

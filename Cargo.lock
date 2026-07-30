@@ -85,34 +85,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
- "divotty-core",
- "divotty-tui",
- "rand",
- "ratatui",
- "serde",
- "serde_yaml",
-]
-
-[[package]]
-name = "divotty-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
  "rand",
  "rand_pcg",
+ "ratatui",
  "serde",
  "serde_yaml",
  "thiserror",
-]
-
-[[package]]
-name = "divotty-tui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crossterm",
- "divotty-core",
- "ratatui",
 ]
 
 [[package]]

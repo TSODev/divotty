@@ -7,26 +7,27 @@ A terminal (TUI) golf game written in Rust. Dice + club choice + aimed
 direction + course conditions (fairway, rough, bunker, water, trees, green)
 → shot resolution with random dispersion.
 
-## Project structure (Cargo workspace)
+## Project structure
+
+A single binary crate (`divotty`), organized as internal modules:
 
 ```
 divotty/
 ├── src/
-│   ├── core/            # divotty-core: pure logic, zero UI dependency
-│   │   └── src/
-│   │       ├── terrain.rs   # terrain types + gameplay profiles (distance, dispersion, penalties)
-│   │       ├── course.rs    # 25x50 grid, .course file parsing, Course::discover
-│   │       ├── shot.rs       # shot resolution (dice + club + terrain) + preview (ShotPreview)
-│   │       └── scoring.rs    # per-hole score / scorecard (semantic labels, no display text)
-│   ├── tui/             # divotty-tui: ratatui rendering
-│   │   └── src/
-│   │       ├── render.rs      # course view, viewport following the ball + dispersion preview
-│   │       ├── sidebar.rs      # info column (title, hole, score, club, last shot, aim, controls)
-│   │       ├── menu.rs          # course selection screen
-│   │       ├── lang.rs           # display language (English by default, French toggle)
-│   │       └── format.rs          # shared display helpers (difficulty stars...)
-│   └── app/             # divotty: main binary, game loop
-│       └── src/main.rs   # menu → GameState → game loop, save/resume
+│   ├── main.rs          # menu → GameState → game loop, save/resume
+│   ├── core/            # pure game logic module, zero UI dependency
+│   │   ├── mod.rs
+│   │   ├── terrain.rs      # terrain types + gameplay profiles (distance, dispersion, penalties)
+│   │   ├── course.rs       # 25x50 grid, .course file parsing, Course::discover
+│   │   ├── shot.rs          # shot resolution (dice + club + terrain) + preview (ShotPreview)
+│   │   └── scoring.rs        # per-hole score / scorecard (semantic labels, no display text)
+│   └── tui/             # ratatui rendering module
+│       ├── mod.rs
+│       ├── render.rs      # course view, viewport following the ball + dispersion preview
+│       ├── sidebar.rs      # info column (title, hole, score, club, last shot, aim, controls)
+│       ├── menu.rs          # course selection screen
+│       ├── lang.rs           # display language (English by default, French toggle)
+│       └── format.rs          # shared display helpers (difficulty stars...)
 └── courses/
     └── demo/            # example course (1 hole)
         ├── course.yaml     # course index (name, difficulty, hole order)
@@ -36,10 +37,10 @@ divotty/
 ## Running the game
 
 From the repository root (the game looks up `courses/` and `save.yaml`
-relative to the current directory, not the crate):
+relative to the current directory):
 
 ```sh
-cargo run -p divotty
+cargo run
 ```
 
 A course selection screen shows up first (courses found under `courses/`,

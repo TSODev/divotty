@@ -1,4 +1,4 @@
-//! divotty-tui : rendu ratatui pour Divotty.
+//! `tui` : rendu ratatui pour Divotty.
 //!
 //! - `render`  : vue de la carte (viewport suivant la balle)
 //! - `sidebar` : colonne d'infos de jeu (titre, trou, score, club, visée...)
