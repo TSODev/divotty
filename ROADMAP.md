@@ -207,3 +207,22 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
 - Import de cartes depuis un format tiers
 - Statistiques de progression (moyenne de coups par trou sur plusieurs parties)
 - Sauvegardes multiples (emplacements nommés) plutôt qu'un seul `save.yaml`
+- Événements aléatoires rares et fun (monstre, catastrophe...) : très
+  occasionnellement (ex. 1 coup sur 100-200), un effet exceptionnel sur la
+  balle ou le terrain — un glissement de terrain crée un bunker, un
+  monstre déplace la balle, la pluie inonde une zone, etc. Objectif pur
+  amusement/surprise, pas une couche de difficulté de plus.
+  - Architecture pressentie : `GameState` possède déjà `hole: Hole` et
+    `ball: Pos` par valeur (pas de référence), donc déplacer la balle ou
+    muter une case de terrain entre deux coups ne demande aucun
+    changement du moteur (`resolve_shot` reste intact) — juste une
+    mutation d'état côté `app`.
+  - Un enum sémantique `core::RandomEvent` (comme `ScoreLabel`) pour
+    rester traduisible par `tui`, mais le tirage aléatoire et la mutation
+    d'état se font côté `app` (`main.rs`), jamais dans `core`.
+  - Mélanger des effets positifs/négatifs/neutres-drôles plutôt que
+    purement punitifs, pour rester dans l'esprit "surprise fun" plutôt que
+    "pénalité aléatoire de plus" (à l'opposé de la direction prise avec le
+    putting/le vent, qui visent à *réduire* le RNG pur).
+  - Réutiliser le panneau "Dernier coup" pour le message plutôt qu'un
+    nouveau panneau.
