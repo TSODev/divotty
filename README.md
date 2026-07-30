@@ -106,7 +106,8 @@ dispersion, per-club terrain sensitivity, obstacle fly-over), course parser
 validated with unit tests, range/dispersion preview before playing, two-column
 multilingual UI (English/French), course selection menu with difficulty
 displayed, save/resume. Multi-hole chaining and a full scorecard aren't in
-yet. See `ROADMAP.md` for what's next, and `CLAUDE.md` for handoff context.
+yet. See `ROADMAP.md` for what's next, `CHANGELOG.md` for release history,
+and `CLAUDE.md` for handoff context.
 
 ## License
 

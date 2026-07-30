@@ -2,10 +2,17 @@
 
 Contexte de handoff pour une session Claude Code sur ce projet.
 
-Note de langue : `README.md` (public, GitHub) est en anglais ; `CLAUDE.md`
-et `ROADMAP.md` (docs internes de handoff) restent en français — choix
-délibéré, pas un oubli de traduction. Ne pas re-traduire le README en
-français sans demande explicite.
+Note de langue : `README.md` et `CHANGELOG.md` (publics, GitHub) sont en
+anglais ; `CLAUDE.md` et `ROADMAP.md` (docs internes de handoff) restent en
+français — choix délibéré, pas un oubli de traduction. Ne pas re-traduire
+ces fichiers sans demande explicite.
+
+`CHANGELOG.md` suit le format
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) : penser à y
+ajouter une entrée sous `## [Unreleased]` à chaque changement notable pour
+l'utilisateur (nouvelle fonctionnalité, comportement modifié, correction),
+pas pour du refactoring interne sans impact visible. À bascule de version
+dans `Cargo.toml`, renommer `[Unreleased]` en `[x.y.z] - AAAA-MM-JJ`.
 
 ## Ce que c'est
 
