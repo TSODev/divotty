@@ -230,6 +230,19 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
 - [x] Panneau Contrôles justifié en bas à gauche — nouvelle fonction
       `panel_bottom_aligned()` dans `sidebar.rs` (préfixe le texte de
       lignes vides calculées depuis la hauteur du panneau).
+- [x] Modernisation des 7 panneaux de la sidebar : bordures arrondies
+      (`BorderType::Rounded`), une couleur d'accent distincte par panneau
+      (Titre blanc, Trou vert, Score jaune, Club bleu clair, Dernier coup
+      magenta clair, Visée cyan, Contrôles gris terne), et surtout du
+      contenu réactif à l'état du jeu plutôt qu'une couleur statique :
+      - Score : doré (Albatros/Eagle), vert (Birdie), neutre (Par), orange
+        (Bogey), rouge (Double bogey et pire) — `score_color()`.
+      - Dernier coup : vert si dans le trou, rouge si pénalité, cyan si
+        sauvegarde confirmée, neutre sinon.
+      - Vent : vert calme / jaune modéré / rouge fort — `wind_color()`.
+      `panel()` prend désormais des lignes (`Vec<Line>`) individuellement
+      stylées plutôt qu'une seule chaîne, pour que seule l'info pertinente
+      réagisse en couleur/gras sans teinter tout le panneau.
 
 ## v1.0 — Polish
 - [x] Sauvegarde/reprise de partie (un seul emplacement, `save.yaml` :

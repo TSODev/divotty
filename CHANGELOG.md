@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Version number shown in the sidebar's title panel.
+- Sidebar panels now have rounded borders, a distinct accent color each,
+  and colored/bold text that reacts to what's happening: the score panel
+  turns gold for an eagle or better, green for a birdie, orange/red for a
+  bogey or worse; the last-shot message turns green when holed and red on
+  a penalty; the wind reading turns from green (calm) to yellow to red
+  (strong) with its strength.
 - Visual zoom (x3) on the map, toggled manually with `Z` (off by default).
   Purely cosmetic — the underlying whole-cell position model is unchanged.
 - Wind: a random direction and strength are rolled when a hole loads, and

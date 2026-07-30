@@ -4,8 +4,9 @@ use crate::tui::lang::Lang;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction as LayoutDirection, Layout, Rect},
-    style::{Color, Style},
-    widgets::{Block, Borders, Paragraph, Widget},
+    style::{Color, Modifier, Style},
+    text::Line,
+    widgets::{Block, BorderType, Borders, Paragraph, Widget},
 };
 
 /// Panneau d'informations à gauche de l'écran : le plateau de jeu (carte)
@@ -34,6 +35,48 @@ pub struct SidebarState<'a> {
     /// possible, juste rejouer (`R`) ou revenir au menu (`M`) — voir
     /// `GameState::finished` dans `main.rs`.
     pub finished: bool,
+}
+
+/// Couleur d'accent (bordure + titre) par panneau — identité visuelle fixe,
+/// distincte de la couleur réactive éventuelle de son contenu (score,
+/// dernier coup, vent).
+const TITLE_ACCENT: Color = Color::White;
+const HOLE_ACCENT: Color = Color::LightGreen;
+const SCORE_ACCENT: Color = Color::Yellow;
+const CLUB_ACCENT: Color = Color::LightBlue;
+const LAST_SHOT_ACCENT: Color = Color::LightMagenta;
+const AIM_ACCENT: Color = Color::Cyan;
+const CONTROLS_ACCENT: Color = Color::DarkGray;
+
+const NEUTRAL: Style = Style::new().fg(Color::White);
+const DIM: Style = Style::new().fg(Color::DarkGray);
+
+fn bold(color: Color) -> Style {
+    Style::new().fg(color).add_modifier(Modifier::BOLD)
+}
+
+/// Couleur d'un label de score : doré pour un très bon score, vert pour un
+/// birdie, neutre au par, orange/rouge à mesure qu'on s'en éloigne — lisible
+/// d'un coup d'œil sans avoir à lire le texte.
+fn score_color(label: ScoreLabel) -> Color {
+    match label {
+        ScoreLabel::Albatross | ScoreLabel::Eagle => Color::Rgb(255, 200, 0),
+        ScoreLabel::Birdie => Color::LightGreen,
+        ScoreLabel::Par => Color::White,
+        ScoreLabel::Bogey => Color::Rgb(255, 140, 0),
+        ScoreLabel::DoubleBogey | ScoreLabel::TripleBogeyOrWorse => Color::Red,
+    }
+}
+
+/// Couleur du vent selon sa force : vert calme, jaune modéré, rouge fort.
+fn wind_color(strength: f32) -> Color {
+    if strength < 1.0 {
+        Color::LightGreen
+    } else if strength < 2.0 {
+        Color::Yellow
+    } else {
+        Color::Red
+    }
 }
 
 /// Libellés fixes de l'interface (titres de volets, aides), par langue.
@@ -198,29 +241,33 @@ fn compass_arrow(direction: Direction) -> &'static str {
     }
 }
 
-fn panel(area: Rect, buf: &mut Buffer, title: &str, body: String) {
+/// Panneau à bordures arrondies avec une couleur d'accent (bordure + titre)
+/// propre à chaque panneau, et un contenu ligne par ligne dont chaque ligne
+/// porte son propre style — pour que seule l'information pertinente (score,
+/// dernier coup, vent) réagisse en couleur, pas tout le panneau.
+fn panel(area: Rect, buf: &mut Buffer, title: &str, accent: Color, lines: Vec<Line<'static>>) {
     let block = Block::default()
+        .border_type(BorderType::Rounded)
         .borders(Borders::ALL)
         .title(title.to_string())
-        .style(Style::default().fg(Color::White));
-    Paragraph::new(body).block(block).render(area, buf);
+        .style(Style::default().fg(accent));
+    Paragraph::new(lines).block(block).render(area, buf);
 }
 
 /// Comme `panel`, mais le contenu est plaqué en bas du panneau plutôt qu'en
 /// haut (`Paragraph` ne supporte pas l'alignement vertical nativement — on
-/// préfixe simplement le texte de lignes vides calculées à partir de la
-/// hauteur disponible).
-fn panel_bottom_aligned(area: Rect, buf: &mut Buffer, title: &str, body: String) {
+/// préfixe simplement des lignes vides calculées à partir de la hauteur
+/// disponible).
+fn panel_bottom_aligned(area: Rect, buf: &mut Buffer, title: &str, accent: Color, lines: Vec<Line<'static>>) {
     let block = Block::default()
+        .border_type(BorderType::Rounded)
         .borders(Borders::ALL)
         .title(title.to_string())
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(accent));
     let inner_height = block.inner(area).height as usize;
-    let content_lines = body.lines().count().max(1);
-    let padding = "\n".repeat(inner_height.saturating_sub(content_lines));
-    Paragraph::new(format!("{padding}{body}"))
-        .block(block)
-        .render(area, buf);
+    let mut padded = vec![Line::from(""); inner_height.saturating_sub(lines.len())];
+    padded.extend(lines);
+    Paragraph::new(padded).block(block).render(area, buf);
 }
 
 impl<'a> Widget for SidebarState<'a> {
@@ -244,7 +291,11 @@ impl<'a> Widget for SidebarState<'a> {
             chunks[0],
             buf,
             "Divotty",
-            format!("⛳ Divotty v{}", env!("CARGO_PKG_VERSION")),
+            TITLE_ACCENT,
+            vec![Line::styled(
+                format!("⛳ Divotty v{}", env!("CARGO_PKG_VERSION")),
+                bold(TITLE_ACCENT),
+            )],
         );
 
         let hole_line = match self.lang {
@@ -255,59 +306,77 @@ impl<'a> Widget for SidebarState<'a> {
             chunks[1],
             buf,
             l.panel_hole,
-            format!(
-                "{}\n{}\nPar {}  {}",
-                hole_line,
-                self.hole_meta.name,
-                self.hole_meta.par,
-                stars(self.course_difficulty)
-            ),
+            HOLE_ACCENT,
+            vec![
+                Line::styled(hole_line, NEUTRAL),
+                Line::styled(self.hole_meta.name.clone(), NEUTRAL),
+                Line::styled(
+                    format!("Par {}  {}", self.hole_meta.par, stars(self.course_difficulty)),
+                    NEUTRAL,
+                ),
+            ],
         );
 
         let score_line = if self.strokes == 0 {
-            "—".to_string()
+            Line::styled("—", NEUTRAL)
         } else {
             let hole_score = HoleScore {
                 strokes: self.strokes,
                 par: self.hole_meta.par,
             };
-            format!(
-                "{} ({})",
-                score_label_text(hole_score.label(), self.lang),
-                format_relative(hole_score.relative_to_par())
+            let label = hole_score.label();
+            Line::styled(
+                format!(
+                    "{} ({})",
+                    score_label_text(label, self.lang),
+                    format_relative(hole_score.relative_to_par())
+                ),
+                bold(score_color(label)),
             )
         };
         panel(
             chunks[2],
             buf,
             l.panel_score,
-            format!("{}: {}\n{}", l.strokes, self.strokes, score_line),
+            SCORE_ACCENT,
+            vec![Line::styled(format!("{}: {}", l.strokes, self.strokes), NEUTRAL), score_line],
         );
 
         panel(
             chunks[3],
             buf,
             l.panel_club,
-            format!("{}\n{}", club_label(self.club, self.lang), l.club_hint),
+            CLUB_ACCENT,
+            vec![
+                Line::styled(club_label(self.club, self.lang), bold(Color::White)),
+                Line::styled(l.club_hint, DIM),
+            ],
         );
 
         let die_text = self
             .last_die
             .map(|d| d.to_string())
             .unwrap_or_else(|| "—".to_string());
-        let message = if self.just_saved {
-            l.saved_message.to_string()
+        let message_line = if self.just_saved {
+            Line::styled(l.saved_message, bold(Color::Cyan))
         } else {
             match self.last_shot {
-                Some(shot) => shot_message(shot, self.strokes, self.lang),
-                None => l.ready_message.to_string(),
+                Some(shot) if shot.holed => {
+                    Line::styled(shot_message(shot, self.strokes, self.lang), bold(Color::LightGreen))
+                }
+                Some(shot) if shot.penalty_strokes > 0 => {
+                    Line::styled(shot_message(shot, self.strokes, self.lang), bold(Color::Red))
+                }
+                Some(shot) => Line::styled(shot_message(shot, self.strokes, self.lang), NEUTRAL),
+                None => Line::styled(l.ready_message, NEUTRAL),
             }
         };
         panel(
             chunks[4],
             buf,
             l.panel_last_shot,
-            format!("{}: {}\n{}", l.die, die_text, message),
+            LAST_SHOT_ACCENT,
+            vec![Line::styled(format!("{}: {}", l.die, die_text), NEUTRAL), message_line],
         );
 
         let angle_deg = self.aim.dy.atan2(self.aim.dx).to_degrees();
@@ -315,26 +384,29 @@ impl<'a> Widget for SidebarState<'a> {
             chunks[5],
             buf,
             l.panel_aim,
-            format!(
-                "{} {:.0}°\n{}: {} {:.1}",
-                compass_arrow(self.aim),
-                (angle_deg + 360.0) % 360.0,
-                l.wind,
-                compass_arrow(self.wind.direction),
-                self.wind.strength
-            ),
+            AIM_ACCENT,
+            vec![
+                Line::styled(
+                    format!("{} {:.0}°", compass_arrow(self.aim), (angle_deg + 360.0) % 360.0),
+                    NEUTRAL,
+                ),
+                Line::styled(
+                    format!("{}: {} {:.1}", l.wind, compass_arrow(self.wind.direction), self.wind.strength),
+                    bold(wind_color(self.wind.strength)),
+                ),
+            ],
         );
 
-        let base_controls = if self.finished {
+        let base_controls: &str = if self.finished {
             l.finished_controls_body
         } else {
             l.controls_body
         };
-        let controls_body = if self.quit_confirm {
-            format!("{}\n{}", l.quit_confirm_hint, base_controls)
-        } else {
-            base_controls.to_string()
-        };
-        panel_bottom_aligned(chunks[6], buf, l.panel_controls, controls_body);
+        let mut controls_lines: Vec<Line<'static>> = Vec::new();
+        if self.quit_confirm {
+            controls_lines.push(Line::styled(l.quit_confirm_hint, bold(Color::Red)));
+        }
+        controls_lines.extend(base_controls.lines().map(|line| Line::styled(line.to_string(), DIM)));
+        panel_bottom_aligned(chunks[6], buf, l.panel_controls, CONTROLS_ACCENT, controls_lines);
     }
 }
