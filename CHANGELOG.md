@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Version number shown in the sidebar's title panel.
+- Automatic visual zoom (x3) on the map when the ball is on the green, to
+  make the small putting area easier to read. Purely cosmetic — the
+  underlying whole-cell position model is unchanged.
 
 ### Fixed
 - The tee and hole markers no longer get hidden behind the shot preview

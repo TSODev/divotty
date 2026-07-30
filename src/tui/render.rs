@@ -80,6 +80,12 @@ fn sample_line(from: Pos, to: Pos) -> Vec<Pos> {
         .collect()
 }
 
+/// Facteur de grossissement appliqué quand la balle est sur le green :
+/// chaque case de la grille est alors dessinée comme un bloc de
+/// `ZOOM_FACTOR`x`ZOOM_FACTOR` caractères plutôt qu'un seul. Purement
+/// visuel — le modèle de position (`Pos`, cases entières) ne change pas.
+const ZOOM_FACTOR: usize = 3;
+
 impl<'a> Widget for CourseView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default().borders(Borders::ALL);
@@ -88,25 +94,45 @@ impl<'a> Widget for CourseView<'a> {
 
         let grid_h = self.hole.tiles.len();
         let grid_w = self.hole.tiles.first().map(|r| r.len()).unwrap_or(0);
-        let (ox, oy) = self.viewport.top_left(self.ball, grid_w, grid_h);
 
-        // Si la grille tient entièrement dans la zone disponible (panneau
-        // plus grand que la carte), on la centre plutôt que de la laisser
-        // collée en haut à gauche du cadre.
-        let content_w = (grid_w as u16).min(inner.width);
-        let content_h = (grid_h as u16).min(inner.height);
-        let margin_x = (inner.width - content_w) / 2;
-        let margin_y = (inner.height - content_h) / 2;
+        let zoom = if self.hole.terrain_at(self.ball) == Some(TerrainKind::Green) {
+            ZOOM_FACTOR
+        } else {
+            1
+        };
+
+        // Fenêtre visible, en cases de grille : la taille physique de la
+        // zone (panneau) et celle demandée par l'appelant (`self.viewport`)
+        // sont toutes deux divisées par le zoom, puisqu'une case occupe
+        // désormais `zoom` caractères dans chaque direction.
+        let view_w_cells = ((inner.width as usize) / zoom)
+            .min(self.viewport.width / zoom)
+            .max(1);
+        let view_h_cells = ((inner.height as usize) / zoom)
+            .min(self.viewport.height / zoom)
+            .max(1);
+        let scoped_viewport = Viewport {
+            width: view_w_cells,
+            height: view_h_cells,
+        };
+        let (ox, oy) = scoped_viewport.top_left(self.ball, grid_w, grid_h);
+
+        // Si la grille (visible) tient entièrement dans la zone disponible,
+        // on la centre plutôt que de la laisser collée en haut à gauche.
+        let content_w_cells = grid_w.min(view_w_cells);
+        let content_h_cells = grid_h.min(view_h_cells);
+        let margin_x = (inner.width - (content_w_cells * zoom) as u16) / 2;
+        let margin_y = (inner.height - (content_h_cells * zoom) as u16) / 2;
 
         let guide_cells = self
             .preview
             .map(|p| sample_line(self.ball, p.max_landing))
             .unwrap_or_default();
 
-        for row in 0..content_h.min(self.viewport.height as u16) {
-            for col in 0..content_w.min(self.viewport.width as u16) {
-                let gx = ox + col as usize;
-                let gy = oy + row as usize;
+        for grow in 0..content_h_cells {
+            for gcol in 0..content_w_cells {
+                let gx = ox + gcol;
+                let gy = oy + grow;
                 let pos = Pos { x: gx, y: gy };
                 let Some(terrain) = self.hole.terrain_at(pos) else {
                     continue;
@@ -147,12 +173,17 @@ impl<'a> Widget for CourseView<'a> {
                     modifier = Modifier::empty();
                 }
 
-                let x = inner.x + margin_x + col;
-                let y = inner.y + margin_y + row;
-                if x < inner.x + inner.width && y < inner.y + inner.height {
-                    buf.get_mut(x, y)
-                        .set_char(ch)
-                        .set_style(Style::default().fg(color).add_modifier(modifier));
+                let style = Style::default().fg(color).add_modifier(modifier);
+                let base_x = inner.x + margin_x + (gcol * zoom) as u16;
+                let base_y = inner.y + margin_y + (grow * zoom) as u16;
+                for dy in 0..zoom as u16 {
+                    for dx in 0..zoom as u16 {
+                        let x = base_x + dx;
+                        let y = base_y + dy;
+                        if x < inner.x + inner.width && y < inner.y + inner.height {
+                            buf.get_mut(x, y).set_char(ch).set_style(style);
+                        }
+                    }
                 }
             }
         }

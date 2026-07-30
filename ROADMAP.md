@@ -45,6 +45,29 @@
       arbre plus loin sur la trajectoire est survolé (zone basse de vol,
       voir `LOW_ALTITUDE_FRACTION` dans `shot.rs`) ; l'eau ne bloque jamais
       la trajectoire, seul l'atterrissage compte
+- [x] Zoom visuel automatique quand la balle est sur le green (facteur x3,
+      `ZOOM_FACTOR` dans `render.rs`) : chaque case s'affiche comme un bloc
+      de plusieurs caractères au lieu d'un seul, pour mieux voir la petite
+      zone du putting. Purement cosmétique — le modèle de position (`Pos`,
+      cases entières) ne change pas.
+- [ ] Rendre le putting moins aléatoire — à concevoir maintenant que le
+      zoom rend la zone du green lisible. Actuellement `Club::Putter` a la
+      dispersion la plus faible (0.2) mais reste un simple tirage aléatoire
+      comme les autres clubs ; pistes à explorer : réduire encore la
+      dispersion résiduelle, introduire un facteur de "précision" lié à la
+      distance restante, ou un mini-mécanisme moins purement RNG (pas encore
+      tranché).
+- [ ] Pente sur le green (idée candidate pour l'item ci-dessus) : une
+      indication d'altitude par case du green qui dévie la trajectoire du
+      putt de façon **déterministe** (vers la pente descendante) plutôt que
+      purement aléatoire — plus lisible/skill-based qu'un simple ajustement
+      de dispersion RNG. Choix de conception à trancher : quelques nouvelles
+      variantes de `TerrainKind` (`GreenSlopeN`/`S`/`E`/`O`, cohérent avec le
+      modèle d'extension existant — un caractère + un profil chacune) versus
+      une vraie couche d'altitude par case (plus expressive/continue, mais
+      changement de format `.course` plus lourd). Probablement à combiner
+      avec le zoom (v0.3, ci-dessus) pour que le joueur puisse "lire" la
+      pente avant de putter.
 - [ ] Historique des coups joués sur le trou courant, affiché dans le HUD
 - [ ] Amélioration du drop : reprise au dernier point de fairway valide le long
       de la trajectoire plutôt qu'un retour pur à la position de départ
