@@ -60,7 +60,7 @@ te = ctx.text_extents(info)
 ctx.move_to(PAGE_W - MARGIN - te.width, MARGIN + 4.5 * MM)
 ctx.show_text(info)
 
-info2 = "Dashed arcs: approximate ideal tee-to-green distance per par, for a tee near the origin (see tools/make_hole_canvas.py)"
+info2 = "Dashed arcs: approximate ideal tee-to-green distance for par 4-7, from a tee vertically centered on the left edge"
 te2 = ctx.text_extents(info2)
 ctx.move_to(PAGE_W - MARGIN - te2.width, MARGIN + 8 * MM)
 ctx.show_text(info2)
@@ -174,30 +174,45 @@ ctx.rectangle(grid_x0, grid_y0, grid_w, grid_h)
 ctx.stroke()
 
 # --- Ideal-distance markers per par ---
-# Quarter-circle arcs from the origin (a tee near (0,0)): roughly how far a
-# green "should" be for a hole to play like the given par, given the club
-# distances calibrated elsewhere in the project (Driver averages ~28 cells;
-# see src/core/shot.rs). Radii chosen to stay within the grid (<=100 wide,
-# <=60 tall) — each arc is clipped to the sweep angle where it's still
-# inside the grid, rather than the full 0-90 degrees, since a radius bigger
-# than the grid's height/width would otherwise run off the page.
-PAR_RADII = {4: 45, 5: 60, 6: 75, 7: 90, 8: 100}
+# Dashed arcs anchored on the left edge, vertically centered, showing
+# roughly how far a green "should" be from a tee on that edge for a hole
+# to play like the given par, given the club distances calibrated
+# elsewhere in the project (Driver averages ~28 cells; see src/core/shot.rs).
+#
+# Anchoring at an edge (rather than the grid's true center) only ever
+# clips the top/bottom, never the sides, so every radius up to the grid
+# width (100) stays a clean, fully visible arc — no fragmenting into
+# corner slivers, no radii that miss the page entirely. That covers
+# par 4 through 7 (45/60/75/90) with real, accurate arcs; par 8 (100)
+# would run edge-to-edge with no headroom left to draw a hole layout
+# around it, so it's left off this canvas.
+PAR_RADII = {4: 45, 5: 60, 6: 75, 7: 90}
 
-def arc_angle_range(radius):
-    t_min = math.acos(min(1.0, GRID_COLS / radius)) if radius > GRID_COLS else 0.0
-    t_max = math.asin(min(1.0, GRID_ROWS / radius)) if radius > GRID_ROWS else math.pi / 2
-    return t_min, t_max
+origin_x = grid_x0
+origin_y = grid_y0 + grid_h / 2  # vertically centered on the left edge
+half_rows = GRID_ROWS / 2
+assert all(r <= GRID_COLS for r in PAR_RADII.values()), "radius must fit the grid width from the left edge"
+
+def arc_angle_half_range(radius):
+    """Symmetric sweep angle (± from the +x axis) that stays inside the grid.
+
+    Anchored at the left edge (x=0), the arc only ever sweeps rightward
+    (|t| <= 90°), so width is a simple `radius <= GRID_COLS` requirement
+    (checked once above), not an angle-dependent clip — only the top/bottom
+    edges (± half_rows from the vertically-centered origin) can clip it.
+    """
+    return math.asin(min(1.0, half_rows / radius)) if radius > half_rows else math.pi / 2
 
 ctx.set_source_rgb(0.2, 0.2, 0.2)
 ctx.set_dash([3, 2])
 for par, radius in PAR_RADII.items():
-    t_min, t_max = arc_angle_range(radius)
+    t_max = arc_angle_half_range(radius)
     ctx.set_line_width(1.1)
-    steps = 80
+    steps = 100
     for i in range(steps + 1):
-        t = t_min + (t_max - t_min) * i / steps
-        px = grid_x0 + radius * math.cos(t) * cell_w
-        py = grid_y0 + radius * math.sin(t) * cell_h
+        t = -t_max + (2 * t_max) * i / steps
+        px = origin_x + radius * math.cos(t) * cell_w
+        py = origin_y + radius * math.sin(t) * cell_h
         if i == 0:
             ctx.move_to(px, py)
         else:
@@ -208,12 +223,13 @@ ctx.set_dash([])
 ctx.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
 ctx.set_font_size(7.5)
 for par, radius in PAR_RADII.items():
-    t_min, t_max = arc_angle_range(radius)
-    t_mid = (t_min + t_max) / 2
+    # The sweep is symmetric around t=0, so the midpoint always sits on the
+    # vertical center line — labels line up left-to-right by par, evenly
+    # spaced (15 cells apart), with no collision risk between them.
     label = f"Par {par} (~{radius})"
     te = ctx.text_extents(label)
-    lx = grid_x0 + radius * math.cos(t_mid) * cell_w
-    ly = grid_y0 + radius * math.sin(t_mid) * cell_h
+    lx = origin_x + radius * cell_w
+    ly = origin_y
     pad = 0.8 * MM
     ctx.set_source_rgb(1, 1, 1)
     ctx.rectangle(lx - te.width / 2 - pad, ly - te.height - pad, te.width + 2 * pad, te.height + 2 * pad)
