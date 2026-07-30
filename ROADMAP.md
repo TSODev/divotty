@@ -56,9 +56,8 @@
 - [ ] Sons/feedback terminal (bell, ou intégration `cpal` optionnelle)
 - [ ] Thème de couleurs configurable
 - [ ] Parcours à 18 trous complet et équilibré
-- [ ] Publication sur crates.io (`cargo install divotty`) — noms réservés,
-      métadonnées prêtes, `cargo publish --dry-run` validé ; publication
-      réelle pas encore faite (voir `CLAUDE.md`)
+- [x] Publication sur crates.io — `divotty` v0.1.0 en ligne,
+      `cargo install divotty` fonctionnel (voir `CLAUDE.md`)
 
 ## Idées non priorisées
 - Mode multijoueur local (tour par tour, même terminal)

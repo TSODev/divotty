@@ -154,14 +154,23 @@ Pas encore fait (voir `ROADMAP.md` pour le détail) :
 
 ## Publication crates.io
 
-Objectif en cours : réserver le nom `divotty` et publier une version
-initiale sur crates.io. Noms `divotty`/`divotty-core`/`divotty-tui` libres
-au moment de la vérification. Compte crates.io déjà authentifié en local
-(`cargo login` fait, credentials dans `~/.cargo/credentials.toml`).
-`cargo publish --dry-run` passe intégralement sur le crate fusionné. La
-publication réelle (`cargo publish`) n'a pas encore été exécutée — c'est
-une action irréversible (impossible de supprimer une version, seulement la
-« yank »), à confirmer explicitement avec l'utilisateur avant de la lancer.
+Fait : `divotty` v0.1.0 est publié sur crates.io
+(https://crates.io/crates/divotty), installable via `cargo install
+divotty`. Compte crates.io authentifié en local (`cargo login` fait,
+credentials dans `~/.cargo/credentials.toml`).
+
+À savoir pour la suite :
+- Une version publiée ne peut pas être supprimée (seulement « yankée » via
+  `cargo yank`) — toute future publication d'une nouvelle version doit
+  passer par un bump de `version` dans `Cargo.toml` et repasser par
+  `cargo publish --dry-run` avant le vrai `cargo publish`, à confirmer
+  explicitement avec l'utilisateur avant de l'exécuter (action irréversible
+  et visible publiquement).
+- Après un `cargo install`, le binaire n'a plus accès à `courses/demo/`
+  (resté dans le crate source, pas copié à côté du binaire installé) : le
+  parcours de secours généré en mémoire (`fallback_course()` dans
+  `src/main.rs`) prend le relais automatiquement — pas de crash, mais
+  l'utilisateur voit un trou générique plutôt que « Le Ravin ».
 
 ## Contraintes d'environnement rencontrées
 
