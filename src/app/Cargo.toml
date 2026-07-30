@@ -1,0 +1,20 @@
+[package]
+name = "divotty"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "divotty"
+path = "src/main.rs"
+
+[dependencies]
+divotty-core = { path = "../core" }
+divotty-tui = { path = "../tui" }
+ratatui.workspace = true
+crossterm.workspace = true
+anyhow.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
