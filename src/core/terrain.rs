@@ -4,9 +4,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// Chaque variante porte ses propres modificateurs via `TerrainKind::profile()`.
 /// Pour ajouter un nouveau type de terrain : ajouter la variante ici, un
-/// caractère dans `TerrainKind::from_char`/`to_char`, et un profil dans
-/// `profile()`. Le moteur de résolution de coup (`shot.rs`) n'a rien à
-/// connaître de plus.
+/// caractère dans `TerrainKind::from_char`, et un profil dans `profile()`.
+/// Le moteur de résolution de coup (`shot.rs`) n'a rien à connaître de plus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TerrainKind {
     Tee,
@@ -114,19 +113,5 @@ impl TerrainKind {
             ' ' => TerrainKind::OutOfBounds,
             _ => return None,
         })
-    }
-
-    pub fn to_char(self) -> char {
-        match self {
-            TerrainKind::Tee => 'D',
-            TerrainKind::Fairway => '.',
-            TerrainKind::Rough => '=',
-            TerrainKind::Bunker => 'B',
-            TerrainKind::Water => '~',
-            TerrainKind::Tree => 'T',
-            TerrainKind::Green => 'G',
-            TerrainKind::Hole => 'H',
-            TerrainKind::OutOfBounds => ' ',
-        }
     }
 }

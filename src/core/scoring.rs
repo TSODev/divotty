@@ -37,22 +37,3 @@ impl HoleScore {
         }
     }
 }
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Scorecard {
-    pub holes: Vec<HoleScore>,
-}
-
-impl Scorecard {
-    pub fn total_strokes(&self) -> u32 {
-        self.holes.iter().map(|h| h.strokes as u32).sum()
-    }
-
-    pub fn total_par(&self) -> u32 {
-        self.holes.iter().map(|h| h.par as u32).sum()
-    }
-
-    pub fn total_relative(&self) -> i32 {
-        self.total_strokes() as i32 - self.total_par() as i32
-    }
-}

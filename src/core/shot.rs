@@ -158,8 +158,6 @@ fn find_trajectory_block(hole: &Hole, from: Pos, target: (f32, f32)) -> Option<P
 /// aperçu, pas une prédiction exacte — `resolve_shot` reste seul à faire foi.
 #[derive(Debug, Clone, Copy)]
 pub struct ShotPreview {
-    /// Atterrissage si le dé donne 1 (portée minimale).
-    pub min_landing: Pos,
     /// Atterrissage si le dé donne 6 (portée maximale).
     pub max_landing: Pos,
     /// Atterrissage pour un dé "moyen" (arrondi de 3.5), sert de centre à la
@@ -188,7 +186,6 @@ pub fn preview_shot(hole: &Hole, from: Pos, club: Club, direction: Direction) ->
     };
 
     ShotPreview {
-        min_landing: landing_for_die(1),
         max_landing: landing_for_die(6),
         expected_landing: landing_for_die(4),
         dispersion_radius: effective_dispersion(
@@ -383,7 +380,7 @@ mod tests {
         let preview = preview_shot(&hole, hole.tee, Club::Driver, direction);
 
         assert!(preview.max_landing.x > preview.expected_landing.x);
-        assert!(preview.expected_landing.x > preview.min_landing.x);
+        assert!(preview.expected_landing.x > hole.tee.x);
         assert_eq!(
             preview.dispersion_radius,
             effective_dispersion(
