@@ -33,7 +33,14 @@
       `GameState` suit déjà `hole_index`/`hole_count`, prêt pour cette
       extension, mais ne joue toujours que `holes[0]`
 - [ ] Carte de score complète (`Scorecard`) affichée entre les trous et en fin de partie
-- [ ] Écran de fin de trou (résumé du score, label Birdie/Bogey/etc.)
+- [x] Écran de fin de trou (résumé du score, label Birdie/Bogey/etc.) — pas
+      un écran séparé : dès `holed`, les panneaux existants (Score, Dernier
+      coup) montrent déjà le résumé, et le panneau Contrôles bascule sur
+      `R` rejouer / `M` menu / `qq` quitter (jouer/viser/sauvegarder sont
+      bloqués). `GameState::finished()`, `run_loop` renvoie un `LoopExit`
+      (`Quit`/`BackToMenu`) plutôt que de juste `break`. Rejouer un
+      parcours depuis le menu clone la `Course` au lieu de la retirer de
+      la liste, pour pouvoir y revenir plusieurs fois dans la même session.
 - [x] Menu de sélection de parcours (lecture de `courses/*/course.yaml`)
 - [x] Difficulté par parcours (1 à 4 étoiles, champ `difficulty` dans
       `course.yaml`, purement indicative)

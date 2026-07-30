@@ -243,10 +243,31 @@ impl GameState {
             Club::Putter => Club::Driver,
         };
     }
+
+    /// Vrai si le dernier coup a atteint le trou — le joueur ne peut plus
+    /// rien jouer tant qu'il n'a pas choisi de rejouer ou de retourner au
+    /// menu (voir `run_loop`).
+    fn finished(&self) -> bool {
+        self.last_shot.as_ref().is_some_and(|shot| shot.holed)
+    }
+
+    /// Remet le trou courant à zéro pour le rejouer (touche `R` une fois
+    /// `finished()`) : position de balle, coups et club repartent comme au
+    /// début, le vent est retiré au sort pour varier d'un essai à l'autre.
+    fn restart_hole(&mut self) {
+        self.ball = self.hole.tee;
+        self.aim = Direction::towards(self.hole.tee, self.hole.hole_pos);
+        self.wind = random_wind();
+        self.strokes = 0;
+        self.club = Club::Driver;
+        self.last_die = None;
+        self.last_shot = None;
+        self.just_saved = false;
+    }
 }
 
 fn main() -> Result<()> {
-    let mut courses = discover_courses()?;
+    let courses = discover_courses()?;
 
     enable_raw_mode()?;
     let mut stdout_handle = stdout();
@@ -255,21 +276,32 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut lang = Lang::default();
-    let has_save = Path::new(SAVE_PATH).exists();
-    let result = select_course(&mut terminal, &courses, &mut lang, has_save).and_then(|choice| {
-        match choice {
-            MenuChoice::Quit => Ok(()),
-            MenuChoice::Resume => {
-                let mut state = load_game(lang)?;
-                run_loop(&mut terminal, &mut state)
-            }
-            MenuChoice::Play(index) => {
-                let (course_dir, course) = courses.remove(index);
-                let mut state = GameState::new(course_dir, course, lang);
-                run_loop(&mut terminal, &mut state)
+    let result = (|| -> Result<()> {
+        loop {
+            let has_save = Path::new(SAVE_PATH).exists();
+            match select_course(&mut terminal, &courses, &mut lang, has_save)? {
+                MenuChoice::Quit => return Ok(()),
+                MenuChoice::Resume => {
+                    let mut state = load_game(lang)?;
+                    match run_loop(&mut terminal, &mut state)? {
+                        LoopExit::Quit => return Ok(()),
+                        LoopExit::BackToMenu => continue,
+                    }
+                }
+                MenuChoice::Play(index) => {
+                    // Cloné plutôt que retiré de la liste : le joueur peut
+                    // revenir au menu (touche `M` en fin de trou) et
+                    // choisir/rejouer le même parcours sans relancer le jeu.
+                    let (course_dir, course) = courses[index].clone();
+                    let mut state = GameState::new(course_dir, course, lang);
+                    match run_loop(&mut terminal, &mut state)? {
+                        LoopExit::Quit => return Ok(()),
+                        LoopExit::BackToMenu => continue,
+                    }
+                }
             }
         }
-    });
+    })();
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -282,6 +314,13 @@ enum MenuChoice {
     Play(usize),
     Resume,
     Quit,
+}
+
+/// Comment on quitte la boucle de jeu : arrêt complet du programme, ou
+/// retour à l'écran de sélection de parcours (fin de trou, touche `M`).
+enum LoopExit {
+    Quit,
+    BackToMenu,
 }
 
 /// Écran de sélection de parcours.
@@ -336,8 +375,10 @@ fn select_course<B: ratatui::backend::Backend>(
 fn run_loop<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     state: &mut GameState,
-) -> Result<()> {
+) -> Result<LoopExit> {
     loop {
+        let finished = state.finished();
+
         terminal.draw(|frame| {
             let columns = Layout::default()
                 .direction(LayoutDirection::Horizontal)
@@ -359,6 +400,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                     last_shot: state.last_shot.as_ref(),
                     just_saved: state.just_saved,
                     quit_confirm: state.quit_confirm,
+                    finished,
                 },
                 columns[0],
             );
@@ -382,28 +424,143 @@ fn run_loop<B: ratatui::backend::Backend>(
 
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        if state.quit_confirm {
-                            break;
+                if finished {
+                    // Trou terminé : plus de visée/coup/sauvegarde, juste
+                    // rejouer, revenir au menu, ou quitter (double q).
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Char('Q') => {
+                            if state.quit_confirm {
+                                return Ok(LoopExit::Quit);
+                            }
+                            state.quit_confirm = true;
+                            continue;
                         }
-                        state.quit_confirm = true;
-                        continue;
+                        KeyCode::Char('r') | KeyCode::Char('R') => state.restart_hole(),
+                        KeyCode::Char('m') | KeyCode::Char('M') => return Ok(LoopExit::BackToMenu),
+                        KeyCode::Char('l') | KeyCode::Char('L') => state.lang = state.lang.next(),
+                        KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = !state.zoom,
+                        _ => {}
                     }
-                    KeyCode::Char(' ') => state.play_shot(),
-                    KeyCode::Tab => state.cycle_club(),
-                    KeyCode::Char('s') | KeyCode::Char('S') => {
-                        state.just_saved = save_game(state).is_ok();
+                    state.quit_confirm = false;
+                } else {
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Char('Q') => {
+                            if state.quit_confirm {
+                                return Ok(LoopExit::Quit);
+                            }
+                            state.quit_confirm = true;
+                            continue;
+                        }
+                        KeyCode::Char(' ') => state.play_shot(),
+                        KeyCode::Tab => state.cycle_club(),
+                        KeyCode::Char('s') | KeyCode::Char('S') => {
+                            state.just_saved = save_game(state).is_ok();
+                        }
+                        KeyCode::Char('l') | KeyCode::Char('L') => state.lang = state.lang.next(),
+                        KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = !state.zoom,
+                        KeyCode::Left => state.nudge_aim(-0.1),
+                        KeyCode::Right => state.nudge_aim(0.1),
+                        _ => {}
                     }
-                    KeyCode::Char('l') | KeyCode::Char('L') => state.lang = state.lang.next(),
-                    KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = !state.zoom,
-                    KeyCode::Left => state.nudge_aim(-0.1),
-                    KeyCode::Right => state.nudge_aim(0.1),
-                    _ => {}
+                    state.quit_confirm = false;
                 }
-                state.quit_confirm = false;
             }
         }
     }
-    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// État de jeu minimal pour les tests, basé sur le parcours de secours
+    /// généré en mémoire (pas besoin de fichier `.course` sur disque).
+    fn test_state() -> GameState {
+        GameState::new(None, fallback_course().unwrap(), Lang::default())
+    }
+
+    #[test]
+    fn cycle_club_goes_through_every_club_and_wraps_around() {
+        let mut state = test_state();
+        assert_eq!(state.club, Club::Driver);
+        for expected in [
+            Club::Wood,
+            Club::Hybrid,
+            Club::Iron,
+            Club::Wedge,
+            Club::Putter,
+            Club::Driver,
+        ] {
+            state.cycle_club();
+            assert_eq!(state.club, expected);
+        }
+    }
+
+    #[test]
+    fn nudge_aim_rotates_and_stays_normalized() {
+        let mut state = test_state();
+        let before = state.aim;
+        state.nudge_aim(0.3);
+        let magnitude = (state.aim.dx.powi(2) + state.aim.dy.powi(2)).sqrt();
+        assert!((magnitude - 1.0).abs() < 1e-4, "la direction doit rester normalisée");
+        assert!(
+            (state.aim.dx - before.dx).abs() > 1e-4 || (state.aim.dy - before.dy).abs() > 1e-4,
+            "la direction doit avoir changé"
+        );
+    }
+
+    #[test]
+    fn play_shot_increments_strokes_and_records_the_shot() {
+        let mut state = test_state();
+        assert_eq!(state.strokes, 0);
+        assert!(state.last_shot.is_none());
+
+        state.play_shot();
+
+        assert!(state.strokes >= 1, "au moins un coup doit être compté");
+        assert!(state.last_die.is_some());
+        assert!(state.last_shot.is_some());
+    }
+
+    #[test]
+    fn finished_reflects_the_holed_flag_of_the_last_shot() {
+        let mut state = test_state();
+        assert!(!state.finished(), "aucun coup joué, pas encore fini");
+
+        state.last_shot = Some(ShotResult {
+            landing: state.ball,
+            landing_terrain: crate::core::TerrainKind::Fairway,
+            penalty_strokes: 0,
+            holed: false,
+            dropped: false,
+        });
+        assert!(!state.finished(), "coup sur le fairway, pas fini");
+
+        state.last_shot = Some(ShotResult {
+            landing: state.ball,
+            landing_terrain: crate::core::TerrainKind::Hole,
+            penalty_strokes: 0,
+            holed: true,
+            dropped: false,
+        });
+        assert!(state.finished(), "coup dans le trou, doit être fini");
+    }
+
+    #[test]
+    fn restart_hole_resets_progress_but_keeps_the_hole() {
+        let mut state = test_state();
+        state.play_shot();
+        state.cycle_club();
+        let tee = state.hole.tee;
+
+        state.restart_hole();
+
+        assert_eq!(state.ball, tee);
+        assert_eq!(state.strokes, 0);
+        assert_eq!(state.club, Club::Driver);
+        assert!(state.last_die.is_none());
+        assert!(state.last_shot.is_none());
+        assert!(!state.just_saved);
+        assert!(!state.finished());
+    }
 }

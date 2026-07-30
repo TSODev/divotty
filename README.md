@@ -58,13 +58,23 @@ In-game controls:
 - **Left/right arrows**: adjust aim angle
 - **Tab**: change club (Driver → Wood → Hybrid → Iron → Wedge → Putter)
 - **Space**: play the shot (rolls the dice)
+- **Z**: toggle map zoom (x3, off by default)
 - **S**: save the current game
 - **L**: switch language
 - **qq**: quit (press twice to confirm)
 
+Once you hole out, aiming/playing/saving are disabled and the controls
+switch to:
+- **R**: replay the current hole
+- **M**: back to the course menu (the course stays in the list, so you can
+  play it again)
+- **qq**: quit
+
 The map constantly shows a preview of the shot being lined up: a dotted
 trajectory guide up to maximum range, and a dispersion halo around the
-average landing spot, before the dice are even rolled.
+average landing spot, before the dice are even rolled. Wind (random
+direction and strength, rolled per hole) drifts non-putt shots and is
+shown in the Aim panel alongside the player's own aim compass.
 
 ## `.course` file format
 
@@ -84,6 +94,7 @@ Character legend:
 | `T` | Tree |
 | `G` | Green |
 | ` ` (space) | Out of bounds |
+| `X` | Penalty area (charges a stroke, unlike water/OOB it doesn't force a drop) |
 
 A course (1, 9, or 18 holes) is a folder containing a `course.yaml` that
 gives its name, its difficulty (1 to 4, purely indicative), and the list
@@ -102,12 +113,14 @@ See `courses/demo/` for a complete, working example.
 ## Current state
 
 Shot resolution engine tested (dice + club + terrain + seedable random
-dispersion, per-club terrain sensitivity, obstacle fly-over), course parser
-validated with unit tests, range/dispersion preview before playing, two-column
-multilingual UI (English/French), course selection menu with difficulty
-displayed, save/resume. Multi-hole chaining and a full scorecard aren't in
-yet. See `ROADMAP.md` for what's next, `CHANGELOG.md` for release history,
-and `CLAUDE.md` for handoff context.
+dispersion, per-club terrain sensitivity, obstacle fly-over, wind drift),
+club distances calibrated as realistic ratios of the Driver, course parser
+validated with unit tests, range/dispersion preview before playing,
+two-column multilingual UI (English/French) with an optional map zoom,
+course selection menu with difficulty displayed, save/resume, and a proper
+end-of-hole state (replay or back to menu). Multi-hole chaining and a full
+scorecard aren't in yet. See `ROADMAP.md` for what's next, `CHANGELOG.md`
+for release history, and `CLAUDE.md` for handoff context.
 
 ## License
 

@@ -30,6 +30,10 @@ pub struct SidebarState<'a> {
     pub just_saved: bool,
     /// Une première pression sur q est en attente de confirmation (`qq`).
     pub quit_confirm: bool,
+    /// Vrai si le dernier coup a atteint le trou : plus d'action de jeu
+    /// possible, juste rejouer (`R`) ou revenir au menu (`M`) — voir
+    /// `GameState::finished` dans `main.rs`.
+    pub finished: bool,
 }
 
 /// Libellés fixes de l'interface (titres de volets, aides), par langue.
@@ -45,6 +49,7 @@ struct Labels {
     wind: &'static str,
     club_hint: &'static str,
     controls_body: &'static str,
+    finished_controls_body: &'static str,
     ready_message: &'static str,
     saved_message: &'static str,
     quit_confirm_hint: &'static str,
@@ -64,6 +69,7 @@ fn labels(lang: Lang) -> Labels {
             wind: "Wind",
             club_hint: "[Tab] next",
             controls_body: "← →  aim\nTab  club\nSpace  play\nZ  zoom\nS  save\nL  language\nqq  quit",
+            finished_controls_body: "R  replay\nM  menu\nZ  zoom\nL  language\nqq  quit",
             ready_message: "Ready to play.",
             saved_message: "Game saved.",
             quit_confirm_hint: "Press q again to quit",
@@ -80,6 +86,7 @@ fn labels(lang: Lang) -> Labels {
             wind: "Vent",
             club_hint: "[Tab] suivant",
             controls_body: "← →  viser\nTab  club\nEspace  jouer\nZ  zoom\nS  sauvegarder\nL  langue\nqq  quitter",
+            finished_controls_body: "R  rejouer\nM  menu\nZ  zoom\nL  langue\nqq  quitter",
             ready_message: "Prêt à jouer.",
             saved_message: "Partie sauvegardée.",
             quit_confirm_hint: "Appuyez encore sur q pour quitter",
@@ -318,10 +325,15 @@ impl<'a> Widget for SidebarState<'a> {
             ),
         );
 
-        let controls_body = if self.quit_confirm {
-            format!("{}\n{}", l.quit_confirm_hint, l.controls_body)
+        let base_controls = if self.finished {
+            l.finished_controls_body
         } else {
-            l.controls_body.to_string()
+            l.controls_body
+        };
+        let controls_body = if self.quit_confirm {
+            format!("{}\n{}", l.quit_confirm_hint, base_controls)
+        } else {
+            base_controls.to_string()
         };
         panel_bottom_aligned(chunks[6], buf, l.panel_controls, controls_body);
     }

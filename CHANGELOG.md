@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New penalty area terrain (`X`, shown in red): unlike water or
   out-of-bounds, it charges a stroke but doesn't force a drop back to
   where the shot started — the ball stays put.
+- Holing out now actually ends the hole: aiming, playing, and saving are
+  disabled once the ball is in, and the Controls panel switches to
+  `R` (replay this hole), `M` (back to the course menu), or `qq` (quit).
+  Previously nothing happened on holing out and you could keep swinging
+  indefinitely. Replaying a course from the menu no longer removes it
+  from the list, so it can be played again in the same session.
 
 ### Changed
 - Club distances recalibrated as realistic ratios of the Driver (Wood

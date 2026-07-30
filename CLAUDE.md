@@ -172,9 +172,10 @@ Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Système de "drop" plus réaliste (actuellement : retour pur et simple à la
   position de départ du coup — une vraie implémentation dropperait au dernier
   point de fairway valide le long de la trajectoire).
-- Tests d'intégration sur la boucle de jeu complète (`src/main.rs`) — les
-  tests actuels couvrent uniquement le module `core` (13 tests entre
-  `course.rs` et `shot.rs`).
+- Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
+  clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
+  `nudge_aim`, `restart_hole`, `finished`) a maintenant 5 tests unitaires
+  dans `src/main.rs`, mais rien qui simule un vrai terminal/`crossterm`.
 
 ## Publication crates.io
 
