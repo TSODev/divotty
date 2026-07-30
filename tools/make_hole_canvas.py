@@ -60,6 +60,11 @@ te = ctx.text_extents(info)
 ctx.move_to(PAGE_W - MARGIN - te.width, MARGIN + 4.5 * MM)
 ctx.show_text(info)
 
+info2 = "Dashed arcs: approximate ideal tee-to-green distance per par, for a tee near the origin (see tools/make_hole_canvas.py)"
+te2 = ctx.text_extents(info2)
+ctx.move_to(PAGE_W - MARGIN - te2.width, MARGIN + 8 * MM)
+ctx.show_text(info2)
+
 # Fields row (Name / Par)
 field_y = MARGIN + 11 * MM
 ctx.set_font_size(10)
@@ -167,6 +172,55 @@ ctx.stroke()
 ctx.set_line_width(1.2)
 ctx.rectangle(grid_x0, grid_y0, grid_w, grid_h)
 ctx.stroke()
+
+# --- Ideal-distance markers per par ---
+# Quarter-circle arcs from the origin (a tee near (0,0)): roughly how far a
+# green "should" be for a hole to play like the given par, given the club
+# distances calibrated elsewhere in the project (Driver averages ~28 cells;
+# see src/core/shot.rs). Radii chosen to stay within the grid (<=100 wide,
+# <=60 tall) — each arc is clipped to the sweep angle where it's still
+# inside the grid, rather than the full 0-90 degrees, since a radius bigger
+# than the grid's height/width would otherwise run off the page.
+PAR_RADII = {4: 45, 5: 60, 6: 75, 7: 90, 8: 100}
+
+def arc_angle_range(radius):
+    t_min = math.acos(min(1.0, GRID_COLS / radius)) if radius > GRID_COLS else 0.0
+    t_max = math.asin(min(1.0, GRID_ROWS / radius)) if radius > GRID_ROWS else math.pi / 2
+    return t_min, t_max
+
+ctx.set_source_rgb(0.2, 0.2, 0.2)
+ctx.set_dash([3, 2])
+for par, radius in PAR_RADII.items():
+    t_min, t_max = arc_angle_range(radius)
+    ctx.set_line_width(1.1)
+    steps = 80
+    for i in range(steps + 1):
+        t = t_min + (t_max - t_min) * i / steps
+        px = grid_x0 + radius * math.cos(t) * cell_w
+        py = grid_y0 + radius * math.sin(t) * cell_h
+        if i == 0:
+            ctx.move_to(px, py)
+        else:
+            ctx.line_to(px, py)
+    ctx.stroke()
+ctx.set_dash([])
+
+ctx.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+ctx.set_font_size(7.5)
+for par, radius in PAR_RADII.items():
+    t_min, t_max = arc_angle_range(radius)
+    t_mid = (t_min + t_max) / 2
+    label = f"Par {par} (~{radius})"
+    te = ctx.text_extents(label)
+    lx = grid_x0 + radius * math.cos(t_mid) * cell_w
+    ly = grid_y0 + radius * math.sin(t_mid) * cell_h
+    pad = 0.8 * MM
+    ctx.set_source_rgb(1, 1, 1)
+    ctx.rectangle(lx - te.width / 2 - pad, ly - te.height - pad, te.width + 2 * pad, te.height + 2 * pad)
+    ctx.fill()
+    ctx.set_source_rgb(0.2, 0.2, 0.2)
+    ctx.move_to(lx - te.width / 2, ly)
+    ctx.show_text(label)
 
 # --- Axis labels (every 10 columns/rows) ---
 ctx.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
