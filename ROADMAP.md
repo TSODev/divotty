@@ -153,6 +153,23 @@
          carte" ci-dessous (la sauvegarde de l'éditeur *est* déjà une
          validation) — à réévaluer si un outil de lint séparé reste utile
          une fois le builder construit.
+- [ ] Partage de parcours créés avec le builder — pas encore tranché
+      comment, mais un fichier `.course`/`course.yaml` est déjà du texte
+      brut : le partage "à la main" (copier le fichier dans le dossier
+      `courses/` d'un ami) fonctionne déjà aujourd'hui, sans rien coder.
+      Paliers possibles, du plus simple au plus ambitieux :
+      1. Documenter que c'est déjà possible tel quel (zéro ingénierie).
+      2. Action "exporter" dans le builder qui écrit le trou fini à un
+         endroit prévisible avec un message clair — toujours zéro réseau.
+      3. Code de partage compact (façon Wordle/Baba Is You) : encoder
+         grille + métadonnées en une chaîne de texte copiable dans un
+         chat, décodable au chargement. Faisable sans serveur ; la grille
+         100x60 se compresse bien vu ses longues plages de caractères
+         répétés (hors-limites, fairway).
+      4. Galerie en ligne partagée (repo communautaire, etc.) —
+         déconseillé pour l'instant, infrastructure disproportionnée pour
+         le stade actuel du projet ; à réévaluer si le jeu prend de
+         l'ampleur.
 - [ ] Validateur de carte en outil séparé (`cargo run --bin course-lint`) :
       détecte cases orphelines/inaccessibles, terrain incohérent, dimensions
       invalides — pour sécuriser la création de nouvelles cartes
