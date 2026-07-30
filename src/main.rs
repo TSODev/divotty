@@ -338,8 +338,9 @@ fn run_loop<B: ratatui::backend::Backend>(
                     hole: &state.hole,
                     ball: state.ball,
                     viewport: Viewport {
-                        width: columns[1].width as usize,
-                        height: columns[1].height as usize,
+                        // -2 : la carte est maintenant encadrée (bordure).
+                        width: columns[1].width.saturating_sub(2) as usize,
+                        height: columns[1].height.saturating_sub(2) as usize,
                     },
                     preview: Some(preview),
                 },

@@ -2,20 +2,22 @@ use crate::core::{Hole, Pos, ShotPreview, TerrainKind};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
-    widgets::Widget,
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders, Widget},
 };
 
-/// Couleur + caractère affichés pour un type de terrain.
+/// Couleur + caractère affichés pour un type de terrain. Le fairway reste
+/// volontairement terne (couleur discrète) pour ne pas rivaliser avec les
+/// éléments de visée (guide/halo), rendus plus lumineux — voir `render()`.
 fn terrain_style(kind: TerrainKind) -> (char, Color) {
     match kind {
         TerrainKind::Tee => ('D', Color::LightCyan),
-        TerrainKind::Fairway => ('.', Color::Green),
+        TerrainKind::Fairway => ('.', Color::Rgb(0, 90, 0)),
         TerrainKind::Rough => ('"', Color::LightGreen),
         TerrainKind::Bunker => ('°', Color::Yellow),
         TerrainKind::Water => ('~', Color::Blue),
         TerrainKind::Tree => ('♣', Color::Rgb(0, 100, 0)),
-        TerrainKind::Green => (',', Color::LightGreen),
+        TerrainKind::Green => ('O', Color::Rgb(0, 220, 0)),
         TerrainKind::Hole => ('⛳', Color::White),
         TerrainKind::OutOfBounds => (' ', Color::DarkGray),
     }
@@ -80,17 +82,29 @@ fn sample_line(from: Pos, to: Pos) -> Vec<Pos> {
 
 impl<'a> Widget for CourseView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let block = Block::default().borders(Borders::ALL);
+        let inner = block.inner(area);
+        block.render(area, buf);
+
         let grid_h = self.hole.tiles.len();
         let grid_w = self.hole.tiles.first().map(|r| r.len()).unwrap_or(0);
         let (ox, oy) = self.viewport.top_left(self.ball, grid_w, grid_h);
+
+        // Si la grille tient entièrement dans la zone disponible (panneau
+        // plus grand que la carte), on la centre plutôt que de la laisser
+        // collée en haut à gauche du cadre.
+        let content_w = (grid_w as u16).min(inner.width);
+        let content_h = (grid_h as u16).min(inner.height);
+        let margin_x = (inner.width - content_w) / 2;
+        let margin_y = (inner.height - content_h) / 2;
 
         let guide_cells = self
             .preview
             .map(|p| sample_line(self.ball, p.max_landing))
             .unwrap_or_default();
 
-        for row in 0..area.height.min(self.viewport.height as u16) {
-            for col in 0..area.width.min(self.viewport.width as u16) {
+        for row in 0..content_h.min(self.viewport.height as u16) {
+            for col in 0..content_w.min(self.viewport.width as u16) {
                 let gx = ox + col as usize;
                 let gy = oy + row as usize;
                 let pos = Pos { x: gx, y: gy };
@@ -99,32 +113,46 @@ impl<'a> Widget for CourseView<'a> {
                 };
 
                 let (mut ch, mut color) = terrain_style(terrain);
+                let mut modifier = Modifier::empty();
+                // Le tee et le trou sont des repères qu'on ne veut jamais
+                // masquer derrière la surimpression de l'aperçu de coup
+                // (guide, halo, repère d'atterrissage) — seule leur couleur
+                // se teinte pour indiquer un chevauchement.
+                let is_landmark = matches!(terrain, TerrainKind::Tee | TerrainKind::Hole);
 
                 if let Some(preview) = self.preview {
                     if cell_distance(pos, preview.expected_landing) <= preview.dispersion_radius {
-                        color = Color::Magenta;
+                        color = Color::LightMagenta;
+                        modifier = Modifier::BOLD;
                     }
                     if guide_cells.contains(&pos) {
-                        ch = '·';
-                        color = Color::DarkGray;
+                        if !is_landmark {
+                            ch = '·';
+                        }
+                        color = Color::White;
+                        modifier = Modifier::BOLD;
                     }
                     if pos == preview.expected_landing {
-                        ch = '✛';
+                        if !is_landmark {
+                            ch = '✛';
+                        }
                         color = Color::LightYellow;
+                        modifier = Modifier::BOLD;
                     }
                 }
 
                 if gx == self.ball.x && gy == self.ball.y {
                     ch = '●';
                     color = Color::Red;
+                    modifier = Modifier::empty();
                 }
 
-                let x = area.x + col;
-                let y = area.y + row;
-                if x < area.x + area.width && y < area.y + area.height {
+                let x = inner.x + margin_x + col;
+                let y = inner.y + margin_y + row;
+                if x < inner.x + inner.width && y < inner.y + inner.height {
                     buf.get_mut(x, y)
                         .set_char(ch)
-                        .set_style(Style::default().fg(color));
+                        .set_style(Style::default().fg(color).add_modifier(modifier));
                 }
             }
         }

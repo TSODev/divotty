@@ -193,6 +193,23 @@ fn panel(area: Rect, buf: &mut Buffer, title: &str, body: String) {
     Paragraph::new(body).block(block).render(area, buf);
 }
 
+/// Comme `panel`, mais le contenu est plaqué en bas du panneau plutôt qu'en
+/// haut (`Paragraph` ne supporte pas l'alignement vertical nativement — on
+/// préfixe simplement le texte de lignes vides calculées à partir de la
+/// hauteur disponible).
+fn panel_bottom_aligned(area: Rect, buf: &mut Buffer, title: &str, body: String) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title.to_string())
+        .style(Style::default().fg(Color::White));
+    let inner_height = block.inner(area).height as usize;
+    let content_lines = body.lines().count().max(1);
+    let padding = "\n".repeat(inner_height.saturating_sub(content_lines));
+    Paragraph::new(format!("{padding}{body}"))
+        .block(block)
+        .render(area, buf);
+}
+
 impl<'a> Widget for SidebarState<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let l = labels(self.lang);
@@ -210,7 +227,12 @@ impl<'a> Widget for SidebarState<'a> {
             ])
             .split(area);
 
-        panel(chunks[0], buf, "Divotty", "⛳ Divotty".to_string());
+        panel(
+            chunks[0],
+            buf,
+            "Divotty",
+            format!("⛳ Divotty v{}", env!("CARGO_PKG_VERSION")),
+        );
 
         let hole_line = match self.lang {
             Lang::En => format!("Hole {}/{}", self.hole_index + 1, self.hole_count),
@@ -288,6 +310,6 @@ impl<'a> Widget for SidebarState<'a> {
         } else {
             l.controls_body.to_string()
         };
-        panel(chunks[6], buf, l.panel_controls, controls_body);
+        panel_bottom_aligned(chunks[6], buf, l.panel_controls, controls_body);
     }
 }

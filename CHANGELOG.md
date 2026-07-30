@@ -7,10 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Version number shown in the sidebar's title panel.
+
+### Fixed
+- The tee and hole markers no longer get hidden behind the shot preview
+  overlay (trajectory guide dots, the expected-landing marker) when they
+  happen to line up — the landmark's glyph stays visible, only its color
+  tints to reflect the overlap.
+
 ### Changed
 - Tee and hole are easier to spot on the map: the hole is now a flag (⛳)
   instead of a barely-visible black disc, and the tee's `D` marker uses a
   bright, distinct color instead of plain white.
+- Course view (the map) is now framed with a border, like every other
+  sidebar panel, and is centered within that panel when the terminal is
+  wider than the course grid (it still follows the ball with no centering
+  once the grid no longer fits on screen).
+- Fairway is duller and the shot preview (trajectory guide, dispersion
+  halo, landing marker) is brighter and bold, so aiming reads more clearly
+  against the terrain. The green's `,` marker is now a bright `O`, clearly
+  distinct from the rough's similar green tone.
+- Controls panel content is anchored to the bottom of the panel instead of
+  the top.
 - Course grid size increased from 50x25 to 100x60 to support holes ranging
   from par 4 to par 8 (the old grid's ~56-cell diagonal couldn't fit a
   credible par 6-8, which needs ~80-100+ cells of cumulative travel). The

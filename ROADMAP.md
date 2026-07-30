@@ -127,33 +127,35 @@
       invalides — pour sécuriser la création de nouvelles cartes
 - [ ] Documentation du format `.course` avec exemples de motifs (dogleg, île, etc.)
 
-## v0.5 — Rendu et interface
+## v0.5 — Rendu et interface (fait)
 
-Notes de refonte visuelle des 7 panneaux de la sidebar (on garde les 7,
-pas de réduction — voir `CLAUDE.md`), prises pendant une session de
-planification. Chaque item est isolé dans `src/tui/`, aucun changement
-côté `core`.
+Refonte visuelle des 7 panneaux de la sidebar (gardés tels quels, pas de
+réduction — voir `CLAUDE.md`), à partir de notes prises pendant une session
+de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
+`core`.
 
-- [ ] Cadre (bordure) autour du panneau carte (`CourseView`, `render.rs`)
-      — aujourd'hui le seul panneau sans bordure ; réduit l'aire du
-      viewport de 2 lignes/colonnes en conséquence.
+- [x] Cadre (bordure) autour du panneau carte (`CourseView`, `render.rs`)
+      — le `Viewport` passé depuis `main.rs` est réduit de 2 (largeur et
+      hauteur) pour compenser la bordure.
+- [x] Carte centrée dans le panneau plutôt que collée en haut à gauche
+      quand la grille tient entièrement dans l'espace disponible (terminal
+      large) : marge calculée à partir de `grid_w/h` vs `inner.width/
+      height` dans `render()`. Suit toujours la balle sans marge quand la
+      grille dépasse l'écran (comportement inchangé dans ce cas).
 - [x] Mieux identifier tee et trou sur la carte : trou en drapeau ⛳,
       tee en `D` recoloré `LightCyan` (distinct de tout le reste de la
       palette de terrain) — `terrain_style()` dans `render.rs`.
-- [ ] Fairway plus terne / trajectoire visée plus intense : réglage de
-      couleur uniquement dans `terrain_style()`/le rendu du guide et du
-      halo (`render.rs`) — pas de changement structurel.
-- [ ] Green (`,` aujourd'hui) remplacé par `O` en vert vif, bien distinct
-      du rough qui utilise déjà `LightGreen` — prévoir une teinte
-      différente (`Rgb` dédié) pour ne pas confondre les deux glyphes.
-- [ ] Panneau Titre : afficher la version (`env!("CARGO_PKG_VERSION")`,
-      disponible à la compilation, aucune dépendance).
-- [ ] Panneau Contrôles justifié en bas à gauche plutôt qu'en haut.
-      **Technique** : `Paragraph` ne supporte pas l'alignement vertical
-      nativement — préfixer le contenu du panneau avec des lignes vides
-      calculées à partir de la hauteur de la zone (`area.height` moins le
-      nombre de lignes de contenu) avant de construire le `Paragraph`,
-      dans `panel()` (`sidebar.rs`) ou un cas spécial pour ce panneau.
+- [x] Fairway plus terne (`Rgb(0,90,0)`) / éléments de visée plus intenses
+      (guide en blanc gras, halo en `LightMagenta` gras, repère
+      d'atterrissage en `LightYellow` gras) — `terrain_style()`/`render()`
+      dans `render.rs`.
+- [x] Green (`,` → `O`) en vert vif (`Rgb(0,220,0)`), bien distinct du
+      rough (`LightGreen`) — `terrain_style()` dans `render.rs`.
+- [x] Panneau Titre : version affichée (`env!("CARGO_PKG_VERSION")`) —
+      `sidebar.rs`.
+- [x] Panneau Contrôles justifié en bas à gauche — nouvelle fonction
+      `panel_bottom_aligned()` dans `sidebar.rs` (préfixe le texte de
+      lignes vides calculées depuis la hauteur du panneau).
 
 ## v1.0 — Polish
 - [x] Sauvegarde/reprise de partie (un seul emplacement, `save.yaml` :
