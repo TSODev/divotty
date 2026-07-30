@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-pub const COURSE_WIDTH: usize = 50;
-pub const COURSE_HEIGHT: usize = 25;
+pub const COURSE_WIDTH: usize = 100;
+pub const COURSE_HEIGHT: usize = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pos {

@@ -35,27 +35,28 @@ fn discover_courses() -> Result<Vec<(Option<PathBuf>, Course)>> {
 
 fn fallback_course() -> Result<Course> {
     // Trou de secours généré en mémoire : fairway droit, un bunker, un peu
-    // d'eau sur le côté, green autour du trou.
+    // d'eau sur le côté, green autour du trou. Tee et trou espacés d'environ
+    // 50 cases (~2-3 coups de Driver en moyenne), cohérent avec un par 4 —
+    // pas juste étalé sur toute la largeur du canevas, qui est bien plus
+    // grand que ce dont un par 4 a besoin.
     let width = crate::core::COURSE_WIDTH;
     let height = crate::core::COURSE_HEIGHT;
     let mut lines = Vec::with_capacity(height);
     for y in 0..height {
         let mut row = vec!['.'; width];
         if y == height / 2 {
-            row[0] = 'D';
-            row[width - 1] = 'H';
-            for x in (width - 6)..(width - 1) {
+            row[2] = 'D';
+            row[50] = 'H';
+            for x in 44..50 {
                 row[x] = 'G';
+            }
+            for x in 30..35 {
+                row[x] = 'B';
             }
         }
         if y == height / 2 - 3 || y == height / 2 + 3 {
-            for x in 10..14 {
+            for x in 14..19 {
                 row[x] = '~';
-            }
-        }
-        if y == height / 2 {
-            for x in 20..23 {
-                row[x] = 'B';
             }
         }
         lines.push(row.into_iter().collect::<String>());

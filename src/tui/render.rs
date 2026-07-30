@@ -9,14 +9,14 @@ use ratatui::{
 /// Couleur + caractère affichés pour un type de terrain.
 fn terrain_style(kind: TerrainKind) -> (char, Color) {
     match kind {
-        TerrainKind::Tee => ('D', Color::White),
+        TerrainKind::Tee => ('D', Color::LightCyan),
         TerrainKind::Fairway => ('.', Color::Green),
         TerrainKind::Rough => ('"', Color::LightGreen),
         TerrainKind::Bunker => ('°', Color::Yellow),
         TerrainKind::Water => ('~', Color::Blue),
         TerrainKind::Tree => ('♣', Color::Rgb(0, 100, 0)),
         TerrainKind::Green => (',', Color::LightGreen),
-        TerrainKind::Hole => ('◉', Color::Black),
+        TerrainKind::Hole => ('⛳', Color::White),
         TerrainKind::OutOfBounds => (' ', Color::DarkGray),
     }
 }

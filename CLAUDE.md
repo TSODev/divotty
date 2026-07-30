@@ -60,10 +60,27 @@ seule règle de zone basse (pas une simulation d'arc de trajectoire).
   (1-4 étoiles) vit dans `course.yaml` (niveau parcours), pas dans le
   frontmatter des fichiers `.course` de trou (niveau trou) — elle n'est liée
   qu'au parcours.
-- **Grille 25x50 vs terminal** : la carte est presque toujours plus grande
+- **Grille 100x60 vs terminal** : la carte est presque toujours plus grande
   que le terminal visible. Le rendu passe systématiquement par un `Viewport`
   qui centre sur la balle (`src/tui/render.rs`) — ne pas tenter d'afficher
   toute la grille d'un coup.
+  - Grille passée de 50x25 à 100x60 (constantes `COURSE_WIDTH`/
+    `COURSE_HEIGHT` dans `src/core/course.rs`) pour permettre des trous de
+    par 4 à par 8 : avec le système dé/club actuel, un Driver moyen
+    parcourt ~14 cases (jusqu'à 24 au mieux), donc l'ancienne diagonale
+    max (~56 cases) plafonnait bien avant un par 6-8 crédible (qui demande
+    ~80-100+ cases de trajectoire cumulée). Le ratio n'est plus 2:1 strict
+    (hauteur ×2.4 contre largeur ×2) pour laisser plus de marge aux trous
+    à dominante verticale.
+  - Alternative envisagée et écartée pour l'instant : dimensions variables
+    par trou (déclarées dans le frontmatter) plutôt qu'une grille globale
+    fixe — plus élégant (pas de remplissage hors-limites inutile sur un
+    par 3 dans un immense canevas) mais casse le contrat "dimensions
+    fixes" et transformerait `COURSE_WIDTH`/`COURSE_HEIGHT` en champs par
+    trou plutôt qu'en constantes globales, utilisées un peu partout dans
+    `course.rs`/`shot.rs`. À reconsidérer si le remplissage à vide devient
+    gênant en pratique, possiblement en lien avec le futur builder de
+    trous.
 - **Chemins relatifs au cwd, pas au binaire** : `courses/` et `save.yaml`
   sont résolus relativement au répertoire courant d'exécution. Lancer le
   jeu depuis la racine du dépôt (`cargo run`). Si `courses/` est absent
@@ -104,7 +121,7 @@ simples `mod.rs`, et les imports inter-crates (`divotty_core::X`,
 ## État du projet (au moment de ce handoff)
 
 Fait et testé :
-- Parsing de fichiers `.course` avec validation (dimensions exactes 50x25,
+- Parsing de fichiers `.course` avec validation (dimensions exactes 100x60,
   une seule case `D`, une seule case `H`, caractères reconnus).
 - `course.yaml` porte un champ `difficulty` (1-4, validé) ; `Course::discover`
   scanne un dossier racine et renvoie chaque parcours avec son dossier

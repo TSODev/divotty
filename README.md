@@ -18,7 +18,7 @@ divotty/
 │   ├── core/            # pure game logic module, zero UI dependency
 │   │   ├── mod.rs
 │   │   ├── terrain.rs      # terrain types + gameplay profiles (distance, dispersion, penalties)
-│   │   ├── course.rs       # 25x50 grid, .course file parsing, Course::discover
+│   │   ├── course.rs       # 100x60 grid, .course file parsing, Course::discover
 │   │   ├── shot.rs          # shot resolution (dice + club + terrain) + preview (ShotPreview)
 │   │   └── scoring.rs        # per-hole score / scorecard (semantic labels, no display text)
 │   └── tui/             # ratatui rendering module
@@ -69,7 +69,7 @@ average landing spot, before the dice are even rolled.
 ## `.course` file format
 
 A hole is a YAML frontmatter (`name`, `par`, optional `description`)
-followed by `---` then an ASCII grid of exactly **50 columns x 25 rows**.
+followed by `---` then an ASCII grid of exactly **100 columns x 60 rows**.
 
 Character legend:
 

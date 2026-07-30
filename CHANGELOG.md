@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Tee and hole are easier to spot on the map: the hole is now a flag (⛳)
+  instead of a barely-visible black disc, and the tee's `D` marker uses a
+  bright, distinct color instead of plain white.
+- Course grid size increased from 50x25 to 100x60 to support holes ranging
+  from par 4 to par 8 (the old grid's ~56-cell diagonal couldn't fit a
+  credible par 6-8, which needs ~80-100+ cells of cumulative travel). The
+  demo course (`courses/demo/hole_01.course`) and the in-memory fallback
+  course were both migrated to the new dimensions.
+
+**Note:** this changes the `.course` file format's required dimensions —
+any custom `.course` file written for 0.1.0 will need to be resized to
+100x60 to keep parsing.
+
 ## [0.1.0] - 2026-07-30
 
 Initial release. Published on [crates.io](https://crates.io/crates/divotty)
