@@ -45,11 +45,11 @@
       arbre plus loin sur la trajectoire est survolé (zone basse de vol,
       voir `LOW_ALTITUDE_FRACTION` dans `shot.rs`) ; l'eau ne bloque jamais
       la trajectoire, seul l'atterrissage compte
-- [x] Zoom visuel automatique quand la balle est sur le green (facteur x3,
-      `ZOOM_FACTOR` dans `render.rs`) : chaque case s'affiche comme un bloc
-      de plusieurs caractères au lieu d'un seul, pour mieux voir la petite
-      zone du putting. Purement cosmétique — le modèle de position (`Pos`,
-      cases entières) ne change pas.
+- [x] Zoom visuel (facteur x3, `ZOOM_FACTOR` dans `render.rs`), activé/
+      désactivé manuellement par la touche `Z` (désactivé par défaut,
+      pas automatique sur le green) : chaque case s'affiche comme un bloc
+      de plusieurs caractères au lieu d'un seul. Purement cosmétique — le
+      modèle de position (`Pos`, cases entières) ne change pas.
 - [ ] Rendre le putting moins aléatoire — à concevoir maintenant que le
       zoom rend la zone du green lisible. Actuellement `Club::Putter` a la
       dispersion la plus faible (0.2) mais reste un simple tirage aléatoire

@@ -9,6 +9,13 @@ use ratatui::{
 /// Couleur + caractère affichés pour un type de terrain. Le fairway reste
 /// volontairement terne (couleur discrète) pour ne pas rivaliser avec les
 /// éléments de visée (guide/halo), rendus plus lumineux — voir `render()`.
+///
+/// Les glyphes doivent rester des caractères "étroits" (largeur 1 colonne).
+/// Le rendu écrit case par case via `buf.get_mut(x,y).set_char(...)` sans
+/// jamais tenir compte de la largeur Unicode — un caractère à présentation
+/// emoji par défaut (ex: `⛳`, U+26F3) s'affiche sur 2 colonnes dans la
+/// plupart des terminaux et désaligne tout ce qui suit sur la ligne,
+/// surtout visible avec le zoom qui le répète plusieurs fois d'affilée.
 fn terrain_style(kind: TerrainKind) -> (char, Color) {
     match kind {
         TerrainKind::Tee => ('D', Color::LightCyan),
@@ -18,7 +25,7 @@ fn terrain_style(kind: TerrainKind) -> (char, Color) {
         TerrainKind::Water => ('~', Color::Blue),
         TerrainKind::Tree => ('♣', Color::Rgb(0, 100, 0)),
         TerrainKind::Green => ('O', Color::Rgb(0, 220, 0)),
-        TerrainKind::Hole => ('⛳', Color::White),
+        TerrainKind::Hole => ('⚑', Color::White),
         TerrainKind::OutOfBounds => (' ', Color::DarkGray),
     }
 }
@@ -53,6 +60,8 @@ pub struct CourseView<'a> {
     /// surimpression tant que le joueur n'a pas joué. `None` si pas de coup
     /// en cours de visée (ex: entre deux trous).
     pub preview: Option<ShotPreview>,
+    /// Zoom activé par le joueur (touche dédiée) — pas automatique.
+    pub zoomed: bool,
 }
 
 /// Distance euclidienne discrète entre deux cases de la grille.
@@ -80,7 +89,7 @@ fn sample_line(from: Pos, to: Pos) -> Vec<Pos> {
         .collect()
 }
 
-/// Facteur de grossissement appliqué quand la balle est sur le green :
+/// Facteur de grossissement quand le zoom est activé (touche dédiée) :
 /// chaque case de la grille est alors dessinée comme un bloc de
 /// `ZOOM_FACTOR`x`ZOOM_FACTOR` caractères plutôt qu'un seul. Purement
 /// visuel — le modèle de position (`Pos`, cases entières) ne change pas.
@@ -95,11 +104,7 @@ impl<'a> Widget for CourseView<'a> {
         let grid_h = self.hole.tiles.len();
         let grid_w = self.hole.tiles.first().map(|r| r.len()).unwrap_or(0);
 
-        let zoom = if self.hole.terrain_at(self.ball) == Some(TerrainKind::Green) {
-            ZOOM_FACTOR
-        } else {
-            1
-        };
+        let zoom = if self.zoomed { ZOOM_FACTOR } else { 1 };
 
         // Fenêtre visible, en cases de grille : la taille physique de la
         // zone (panneau) et celle demandée par l'appelant (`self.viewport`)

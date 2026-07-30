@@ -9,15 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Version number shown in the sidebar's title panel.
-- Automatic visual zoom (x3) on the map when the ball is on the green, to
-  make the small putting area easier to read. Purely cosmetic — the
-  underlying whole-cell position model is unchanged.
+- Visual zoom (x3) on the map, toggled manually with `Z` (off by default).
+  Purely cosmetic — the underlying whole-cell position model is unchanged.
 
 ### Fixed
 - The tee and hole markers no longer get hidden behind the shot preview
   overlay (trajectory guide dots, the expected-landing marker) when they
   happen to line up — the landmark's glyph stays visible, only its color
   tints to reflect the overlap.
+- The hole marker no longer corrupts the rest of the row when zoomed in on
+  the green: it used a double-width emoji glyph (⛳) that the low-level,
+  cell-by-cell map renderer isn't equipped to handle, throwing off column
+  alignment once the zoom repeated it several times in a row. Replaced
+  with a single-width flag glyph (⚑).
 
 ### Changed
 - Tee and hole are easier to spot on the map: the hole is now a flag (⛳)

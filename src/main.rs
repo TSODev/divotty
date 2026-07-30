@@ -127,6 +127,7 @@ fn load_game(lang: Lang) -> Result<GameState> {
         last_shot: None,
         just_saved: false,
         quit_confirm: false,
+        zoom: false,
     })
 }
 
@@ -147,6 +148,9 @@ struct GameState {
     last_shot: Option<ShotResult>,
     just_saved: bool,
     quit_confirm: bool,
+    /// Zoom sur la carte, activé/désactivé par le joueur (touche `Z`) —
+    /// désactivé par défaut.
+    zoom: bool,
 }
 
 impl GameState {
@@ -174,6 +178,7 @@ impl GameState {
             last_shot: None,
             just_saved: false,
             quit_confirm: false,
+            zoom: false,
         }
     }
 
@@ -343,6 +348,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                         height: columns[1].height.saturating_sub(2) as usize,
                     },
                     preview: Some(preview),
+                    zoomed: state.zoom,
                 },
                 columns[1],
             );
@@ -364,6 +370,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                         state.just_saved = save_game(state).is_ok();
                     }
                     KeyCode::Char('l') | KeyCode::Char('L') => state.lang = state.lang.next(),
+                    KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = !state.zoom,
                     KeyCode::Left => state.nudge_aim(-0.1),
                     KeyCode::Right => state.nudge_aim(0.1),
                     _ => {}
