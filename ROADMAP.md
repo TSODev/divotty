@@ -14,6 +14,11 @@
 - [x] Clubs étendus (Driver, Wood, Hybrid, Iron, Wedge, Putter) avec une
       sensibilité au terrain par club (un terrain difficile pénalise
       proportionnellement plus un club long qu'un club court)
+- [x] Distances de club recalibrées en ratio réaliste du Driver (Bois 90%,
+      Hybride 80%, Fer 62.5%, Wedge 35% — putter volontairement laissé de
+      côté, régime à part) : un Driver moyen laisse désormais une approche
+      à portée de Bois/Fer sur un par 4 typique (~53 cases tee-trou, voir
+      le trou de démo), au lieu de nécessiter deux Driver complets.
 - [x] Interface deux colonnes (sidebar multi-panneaux + carte) — remplace le
       HUD une ligne initial
 - [x] Zone à pénalité (`TerrainKind::PenaltyZone`, caractère `X`, affichée

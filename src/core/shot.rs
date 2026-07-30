@@ -17,14 +17,23 @@ pub enum Club {
 
 impl Club {
     /// Portée de base (en cases) pour un résultat de dé donné (1..=6).
+    ///
+    /// Les facteurs (hors putter) sont calibrés en ratio du Driver, façon
+    /// golf réel (Bois ~90%, Hybride ~80%, Fer ~62%, Wedge ~35%), plutôt que
+    /// des valeurs arbitraires — un Driver moyen (dé 3.5) doit laisser une
+    /// approche à distance de Bois/Fer sur un par 4 typique (voir
+    /// `courses/demo/hole_01.course`, ~53 cases tee-trou). Le putter n'est
+    /// volontairement pas mis à l'échelle du Driver : c'est un régime à
+    /// part (précision très courte distance sur le green), pas une version
+    /// proportionnelle d'un grand coup.
     pub fn base_distance(self, die: u8) -> f32 {
         let die = die as f32;
         match self {
-            Club::Driver => die * 4.0,
-            Club::Wood => die * 3.4,
-            Club::Hybrid => die * 3.0,
-            Club::Iron => die * 2.5,
-            Club::Wedge => die * 1.2,
+            Club::Driver => die * 8.0,
+            Club::Wood => die * 7.2,
+            Club::Hybrid => die * 6.4,
+            Club::Iron => die * 5.0,
+            Club::Wedge => die * 2.8,
             Club::Putter => die * 0.5,
         }
     }
@@ -328,6 +337,42 @@ mod tests {
         }
         let raw = format!("name: \"Test\"\npar: 3\n---\n{}\n", lines.join("\n"));
         Hole::parse(&raw).unwrap()
+    }
+
+    /// Distance moyenne (sur dé 1..=6) d'un club, en cases.
+    fn average_distance(club: Club) -> f32 {
+        (1..=6).map(|die| club.base_distance(die)).sum::<f32>() / 6.0
+    }
+
+    #[test]
+    fn club_distances_scale_realistically_relative_to_driver() {
+        let driver_avg = average_distance(Club::Driver);
+        for (club, expected_ratio) in [
+            (Club::Wood, 0.90),
+            (Club::Hybrid, 0.80),
+            (Club::Iron, 0.625),
+            (Club::Wedge, 0.35),
+        ] {
+            let actual_ratio = average_distance(club) / driver_avg;
+            assert!(
+                (actual_ratio - expected_ratio).abs() < 0.01,
+                "{club:?}: ratio attendu {expected_ratio}, obtenu {actual_ratio}"
+            );
+        }
+    }
+
+    #[test]
+    fn driver_leaves_a_wood_or_iron_approach_on_a_typical_par_4() {
+        // Trou de démo : ~53 cases entre le tee et le trou. Un Driver moyen
+        // doit laisser une approche à portée de Bois ou de Fer, pas encore
+        // un autre Driver complet ni juste un petit pitch.
+        let hole_length = 53.0;
+        let remaining = hole_length - average_distance(Club::Driver);
+        assert!(
+            remaining <= average_distance(Club::Wood) * 1.1
+                && remaining >= average_distance(Club::Iron) * 0.9,
+            "distance restante après un Driver moyen ({remaining}) hors de portée Bois/Fer"
+        );
     }
 
     #[test]

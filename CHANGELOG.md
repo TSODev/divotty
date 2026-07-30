@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where the shot started — the ball stays put.
 
 ### Changed
+- Club distances recalibrated as realistic ratios of the Driver (Wood
+  90%, Hybrid 80%, Iron 62.5%, Wedge 35% — the putter is deliberately
+  left out of this scaling, it's a different short-range regime). An
+  average Driver now leaves a Wood/Iron-range approach on a typical par 4
+  instead of needing two full Drivers to get near the green.
 - Redesigned the demo course (`courses/demo/hole_01.course`): the fairway
   is now a proper corridor bordered by rough on both sides, instead of
   nearly the entire 100x60 canvas being uniform fairway with rough only
