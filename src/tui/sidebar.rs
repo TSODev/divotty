@@ -142,6 +142,8 @@ fn terrain_name(terrain: TerrainKind, lang: Lang) -> &'static str {
         (TerrainKind::Hole, Lang::Fr) => "le trou",
         (TerrainKind::OutOfBounds, Lang::En) => "out of bounds",
         (TerrainKind::OutOfBounds, Lang::Fr) => "hors-limites",
+        (TerrainKind::PenaltyZone, Lang::En) => "a penalty area",
+        (TerrainKind::PenaltyZone, Lang::Fr) => "une zone à pénalité",
     }
 }
 

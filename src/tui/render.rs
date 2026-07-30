@@ -27,6 +27,7 @@ fn terrain_style(kind: TerrainKind) -> (char, Color) {
         TerrainKind::Green => ('O', Color::Rgb(0, 220, 0)),
         TerrainKind::Hole => ('⚑', Color::White),
         TerrainKind::OutOfBounds => (' ', Color::DarkGray),
+        TerrainKind::PenaltyZone => ('X', Color::Red),
     }
 }
 

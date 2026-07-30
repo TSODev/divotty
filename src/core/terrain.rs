@@ -17,6 +17,11 @@ pub enum TerrainKind {
     Green,
     Hole,
     OutOfBounds,
+    /// Zone à pénalité (ex: broussailles denses en bordure de fairway) :
+    /// coûte un coup de pénalité mais, contrairement à l'eau/hors-limites,
+    /// ne renvoie pas la balle au point de départ du coup — elle reste sur
+    /// place. Seul terrain à combiner pénalité et absence de drop forcé.
+    PenaltyZone,
 }
 
 /// Profil de jeu associé à un terrain : comment il affecte un coup joué
@@ -96,6 +101,13 @@ impl TerrainKind {
                 forces_drop: true,
                 blocks_trajectory: false,
             },
+            TerrainKind::PenaltyZone => TerrainProfile {
+                distance_mult: 0.7,
+                dispersion_mult: 1.6,
+                landing_penalty: 1,
+                forces_drop: false,
+                blocks_trajectory: false,
+            },
         }
     }
 
@@ -111,6 +123,7 @@ impl TerrainKind {
             'G' => TerrainKind::Green,
             'H' => TerrainKind::Hole,
             ' ' => TerrainKind::OutOfBounds,
+            'X' => TerrainKind::PenaltyZone,
             _ => return None,
         })
     }

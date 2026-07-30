@@ -16,6 +16,12 @@
       proportionnellement plus un club long qu'un club court)
 - [x] Interface deux colonnes (sidebar multi-panneaux + carte) — remplace le
       HUD une ligne initial
+- [x] Zone à pénalité (`TerrainKind::PenaltyZone`, caractère `X`, affichée
+      en rouge) : coûte un coup mais, contrairement à l'eau/hors-limites,
+      ne force pas de drop — la balle reste sur place. Seul terrain à
+      combiner pénalité et absence de drop forcé (chemin de code jusque-là
+      jamais exercé). Ajoutée de chaque côté du rough dans le trou de démo
+      pour la tester en conditions réelles.
 
 ## v0.2 — Parcours complets
 - [ ] Enchaînement automatique des trous d'un `Course` (1 → 9 → 18) —

@@ -533,4 +533,39 @@ mod tests {
             assert_eq!(result.penalty_strokes, 1);
         }
     }
+
+    #[test]
+    fn penalty_zone_charges_a_stroke_without_forcing_a_drop() {
+        // Contrairement à l'eau/hors-limites, une zone à pénalité coûte un
+        // coup mais laisse la balle sur place — seul terrain à combiner
+        // pénalité et absence de drop forcé.
+        let mut lines = Vec::with_capacity(COURSE_HEIGHT);
+        let fairway_line: String = std::iter::repeat('.').take(COURSE_WIDTH).collect();
+        for y in 0..COURSE_HEIGHT {
+            let mut chars: Vec<char> = fairway_line.chars().collect();
+            if y == 0 {
+                chars[0] = 'D';
+                chars[1] = 'X'; // zone à pénalité juste à côté du départ
+            }
+            if y == COURSE_HEIGHT - 1 {
+                chars[COURSE_WIDTH - 1] = 'H';
+            }
+            lines.push(chars.into_iter().collect::<String>());
+        }
+        let raw = format!("name: \"Test pénalité\"\npar: 3\n---\n{}\n", lines.join("\n"));
+        let hole = Hole::parse(&raw).unwrap();
+
+        let shot = Shot {
+            club: Club::Putter,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 1,
+        };
+        let mut rng = Pcg32::new(1, 1);
+        let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
+        if result.landing_terrain == TerrainKind::PenaltyZone {
+            assert_eq!(result.penalty_strokes, 1);
+            assert!(!result.dropped, "une zone à pénalité ne force pas de drop");
+            assert_eq!(result.landing, Pos { x: 1, y: 0 });
+        }
+    }
 }

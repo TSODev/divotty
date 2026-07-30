@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drift the ball's landing spot downwind (proportional to shot distance —
   putts are never affected). Shown in the Aim panel next to the player's
   own aim compass, and factored into the shot preview so it stays accurate.
+- New penalty area terrain (`X`, shown in red): unlike water or
+  out-of-bounds, it charges a stroke but doesn't force a drop back to
+  where the shot started — the ball stays put.
+
+### Changed
+- Redesigned the demo course (`courses/demo/hole_01.course`): the fairway
+  is now a proper corridor bordered by rough on both sides, instead of
+  nearly the entire 100x60 canvas being uniform fairway with rough only
+  at the very top/bottom edges (`Rough` gameplay effects already existed
+  in the engine — this was purely a course-design gap, not a missing
+  feature). Also added a penalty area patch on each side of the rough to
+  exercise the new terrain in play, and a small out-of-bounds patch just
+  behind the green (long approach shots can now fly the green into OB) —
+  the `OutOfBounds` terrain existed in the engine but the demo course had
+  never actually used it.
 
 ### Fixed
 - The tee and hole markers no longer get hidden behind the shot preview
