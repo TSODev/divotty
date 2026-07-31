@@ -1,5 +1,5 @@
 use crate::core::{Club, Direction, HoleMeta, HoleScore, Scorecard, ShotResult, TerrainKind, Wind};
-use crate::tui::format::{format_relative, score_color, score_label_text, stars};
+use crate::tui::format::{die_cap_bar, format_relative, score_color, score_label_text, stars};
 use crate::tui::lang::Lang;
 use ratatui::{
     buffer::Buffer,
@@ -25,8 +25,11 @@ pub struct SidebarState<'a> {
     pub scorecard: &'a Scorecard,
     pub strokes: u8,
     pub club: Club,
-    /// Plafond choisi par le joueur pour le tirage du dé (1 à 6, 6 = pas de
-    /// plafond) — voir `GameState::die_strength` dans `main.rs`.
+    /// Plafond choisi par le joueur pour le tirage du dé (3 à 6, 6 = pas de
+    /// plafond) — voir `GameState::die_strength` dans `main.rs`. Affiché
+    /// sous un libellé golf ("Force du coup"/"Shot power") plutôt que
+    /// "plafond" : la mécanique de plafonnement du dé reste un détail
+    /// interne, pas quelque chose que le joueur a besoin de comprendre.
     pub die_strength: u8,
     pub aim: Direction,
     pub wind: Wind,
@@ -106,9 +109,9 @@ fn labels(lang: Lang) -> Labels {
             strokes: "Strokes",
             total: "Total",
             die: "Die",
-            die_cap: "Die cap",
+            die_cap: "Shot power",
             wind: "Wind",
-            club_hint: "Tab club  +/- die cap",
+            club_hint: "Tab club  +/- power",
             controls_body: "← →  aim\nTab  club\nSpace  play\nZ  zoom\nS  save\nL  language\nqq  quit",
             finished_controls_body: "Enter  finish round\nR  replay\nM  menu\nZ  zoom\nL  language\nqq  quit",
             finished_controls_body_more_holes: "N  next hole\nR  replay\nM  menu\nZ  zoom\nL  language\nqq  quit",
@@ -126,9 +129,9 @@ fn labels(lang: Lang) -> Labels {
             strokes: "Coups",
             total: "Total",
             die: "Dé",
-            die_cap: "Plafond dé",
+            die_cap: "Force du coup",
             wind: "Vent",
-            club_hint: "Tab club  +/- plafond dé",
+            club_hint: "Tab club  +/- force",
             controls_body: "← →  viser\nTab  club\nEspace  jouer\nZ  zoom\nS  sauvegarder\nL  langue\nqq  quitter",
             finished_controls_body: "Entrée  terminer\nR  rejouer\nM  menu\nZ  zoom\nL  langue\nqq  quitter",
             finished_controls_body_more_holes: "N  trou suivant\nR  rejouer\nM  menu\nZ  zoom\nL  langue\nqq  quitter",
@@ -343,7 +346,7 @@ impl<'a> Widget for SidebarState<'a> {
             CLUB_ACCENT,
             vec![
                 Line::styled(club_label(self.club, self.lang), bold(Color::White)),
-                Line::styled(format!("{}: {}/6", l.die_cap, self.die_strength), die_cap_style),
+                Line::styled(format!("{}: {}", l.die_cap, die_cap_bar(self.die_strength)), die_cap_style),
                 Line::styled(l.club_hint, DIM),
             ],
         );

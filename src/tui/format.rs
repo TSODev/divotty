@@ -47,3 +47,33 @@ pub fn format_relative(relative: i32) -> String {
         r => format!("{r}"),
     }
 }
+
+/// Barre "curseur" pour le plafond de dé (ex: "-+--"), un `+` marquant la
+/// position courante parmi les 4 valeurs possibles (3 à 6, voir
+/// `GameState::die_strength`/`DIE_STRENGTH_FLOOR` dans `main.rs`) — plus
+/// lisible d'un coup d'œil qu'un simple texte "N/6". Même esprit que
+/// `stars()` : la plage (3-6) est un fait du jeu, pas une valeur qu'il faut
+/// faire voyager depuis `main.rs` pour ce seul besoin d'affichage.
+pub fn die_cap_bar(value: u8) -> String {
+    const MIN: u8 = 3;
+    const MAX: u8 = 6;
+    let clamped = value.clamp(MIN, MAX);
+    let marker_index = (clamped - MIN) as usize;
+    (MIN..=MAX)
+        .enumerate()
+        .map(|(i, _)| if i == marker_index { '+' } else { '-' })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn die_cap_bar_marks_the_right_slot() {
+        assert_eq!(die_cap_bar(3), "+---");
+        assert_eq!(die_cap_bar(4), "-+--");
+        assert_eq!(die_cap_bar(5), "--+-");
+        assert_eq!(die_cap_bar(6), "---+");
+    }
+}

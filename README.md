@@ -57,7 +57,7 @@ Menu controls:
 In-game controls:
 - **Left/right arrows**: adjust aim angle
 - **Tab / Shift+Tab**: change club, forward or backward (Driver → Wood → Hybrid → Iron → Wedge → Putter)
-- **+ / -**: raise/lower the die cap (3-6, 6 = no cap) — see below
+- **+ / -**: raise/lower shot power (3-6, 6 = full power) — see below
 - **Space**: play the shot (rolls the dice)
 - **Z**: toggle map zoom (x3, off by default)
 - **S**: save the current game
@@ -81,12 +81,13 @@ average landing spot, before the dice are even rolled. Wind (random
 direction and strength, rolled per hole) drifts non-putt shots and is
 shown in the Aim panel alongside the player's own aim compass.
 
-The die roll (1-6) is always uniform, but `+`/`-` let you cap its top end
-so a good roll can't send the ball flying past a nearby green — capping at
-3, for instance, means the die can only ever come up 1-3. The cap can't go
-below 3 (a 1-2 cap would make even a Putter nearly unable to reach the
-hole) and resets to 6 whenever you change club or start a new hole, so
-it's a per-shot fine-tune rather than a standing preference.
+The die roll (1-6) is always uniform, but `+`/`-` let you dial back your
+shot power (shown as a 4-slot bar, `+---` to `---+`, in the Club panel) so
+a good roll can't send the ball flying past a nearby green — turning it
+down to 3, for instance, means the die can only ever come up 1-3. Power
+can't go below 3 (any lower would make even a Putter nearly unable to
+reach the hole) and resets to full whenever you change club or start a
+new hole, so it's a per-shot fine-tune rather than a standing preference.
 
 ## `.course` file format
 

@@ -27,12 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Shift+Tab` cycles clubs backward (Putter → Wedge → ... → Driver),
   complementing `Tab`'s forward cycle — no need to go all the way around
   to reach the previous club.
-- Die cap (`+`/`-`, shown in the Club panel): caps the die roll at a
-  player-chosen value from 3 to 6 (6 = no cap, the original behavior) so a
-  lucky high roll can't send the ball flying past a nearby green. Floored
-  at 3 rather than 1, since a lower cap would leave even a Putter almost
-  unable to reach the hole. Resets to 6 on every new hole and every club
-  change, so it's a per-shot fine-tune rather than a standing preference.
+- Shot power (`+`/`-`, shown in the Club panel): caps the die roll at a
+  player-chosen value from 3 to 6 (6 = full power, the original behavior)
+  so a lucky high roll can't send the ball flying past a nearby green.
+  Framed as "power" rather than exposing the die-cap mechanism, to stay in
+  golf terms. Floored at 3 rather than 1, since a lower cap would leave
+  even a Putter almost unable to reach the hole. Resets to 6 on every new
+  hole and every club change, so it's a per-shot fine-tune rather than a
+  standing preference. Shown as a small 4-slot slider (`+---` to `---+`)
+  rather than plain text.
   The shot preview (guide/halo) reflects the current cap.
 - Version number shown in the sidebar's title panel.
 - Sidebar panels now have rounded borders, a distinct accent color each,

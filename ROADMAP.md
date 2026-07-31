@@ -95,14 +95,20 @@
       pas automatique sur le green) : chaque case s'affiche comme un bloc
       de plusieurs caractères au lieu d'un seul. Purement cosmétique — le
       modèle de position (`Pos`, cases entières) ne change pas.
-- [x] Plafond de dé réglable par le joueur (`+`/`-`, 3 à 6, 6 = pas de
-      plafond) : le tirage reste uniforme mais borné par le plafond choisi
-      (`gen_range(1..=die_strength)`), pour éviter qu'un gros dé n'envoie la
-      balle bien au-delà d'un green proche. Plancher à 3 plutôt qu'1
+- [x] Force du coup réglable par le joueur (`+`/`-`, 3 à 6, 6 = pleine
+      puissance) : le tirage reste uniforme mais borné par le plafond
+      choisi (`gen_range(1..=die_strength)`), pour éviter qu'un gros dé
+      n'envoie la balle bien au-delà d'un green proche. Nommé "Force du
+      coup"/"Shot power" côté affichage plutôt que "plafond de dé" — le
+      joueur règle sa puissance de frappe, la mécanique de plafonnement du
+      dé reste un détail interne (les identifiants de code, eux,
+      restent `die_strength`/`die_cap`, cohérent avec "core reste
+      sémantique, tui traduit"). Plancher à 3 plutôt qu'1
       (`DIE_STRENGTH_FLOOR`) : en dessous, même un Putter (portée die*0.5)
       ne parcourrait presque plus rien, rendant le coup inutile plutôt que
-      "sûr". Affiché dans le panneau Club (`Die cap: N/6`, coloré en jaune
-      si <6) ; l'aperçu de coup (`preview_shot`) prend désormais
+      "sûr". Affiché dans le panneau Club comme un curseur à 4 crans
+      (`+---` à `---+`, `format::die_cap_bar`) plutôt qu'un texte "N/6",
+      coloré en jaune si <6 ; l'aperçu de coup (`preview_shot`) prend désormais
       `die_strength` en paramètre pour que le guide/halo reflète le plafond
       courant plutôt qu'un 6 fixe. Remis à 6 à chaque nouveau trou et à
       chaque changement de club (choix délibéré : réglage fin pour le

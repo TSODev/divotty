@@ -97,9 +97,10 @@ fn random_wind() -> Wind {
     }
 }
 
-/// Plafond de dé par défaut (1 à 6) : 6 = pas de plafond, comportement
-/// d'origine. Fonction plutôt que constante inline pour servir de valeur
-/// `#[serde(default)]` (sauvegardes écrites avant l'ajout du champ).
+/// Plafond de dé par défaut (3 à 6, voir `DIE_STRENGTH_FLOOR`) : 6 = pas de
+/// plafond, comportement d'origine. Fonction plutôt que constante inline
+/// pour servir de valeur `#[serde(default)]` (sauvegardes écrites avant
+/// l'ajout du champ).
 fn default_die_strength() -> u8 {
     6
 }
@@ -194,10 +195,11 @@ struct GameState {
     /// terminé mais pas encore confirmé via `advance_hole` — rejouer un
     /// trou fini avec `restart_hole` ne laisse donc aucune trace ici).
     scorecard: Scorecard,
-    /// Plafond choisi par le joueur pour le tirage du dé (1 à 6, 6 = pas de
-    /// plafond). Remis à 6 à chaque nouveau trou et à chaque changement de
-    /// club — un réglage fin pour le club/trou courant, pas une préférence
-    /// durable (voir `cycle_club`/`restart_hole`/`advance_hole`).
+    /// Plafond choisi par le joueur pour le tirage du dé (3 à 6, voir
+    /// `DIE_STRENGTH_FLOOR`, 6 = pas de plafond). Remis à 6 à chaque nouveau
+    /// trou et à chaque changement de club — un réglage fin pour le
+    /// club/trou courant, pas une préférence durable (voir
+    /// `cycle_club`/`restart_hole`/`advance_hole`).
     die_strength: u8,
     lang: Lang,
     last_die: Option<u8>,
