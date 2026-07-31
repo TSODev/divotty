@@ -192,16 +192,33 @@ Fait et testé :
 - Un deuxième parcours, `courses/quick3/` (3 trous, par 3/4/5, difficulté 2
   étoiles), sert de format court pour tester l'enchaînement sans attendre
   un 9 trous complet — voir `courses/demo/` pour l'exemple à un seul trou.
+- Drop réaliste sur l'eau/hors-limites (`backtrack_to_safe_landing()` dans
+  `shot.rs`) : au lieu d'un retour pur et simple à la position de départ du
+  coup, la balle remonte la trajectoire depuis le point d'impact et
+  s'arrête à la première case qui ne force pas elle-même un drop (eau,
+  hors-limites) ni ne bloque la trajectoire (arbre) — sauter par-dessus un
+  arbre rencontré en chemin plutôt que de s'y arrêter, sinon ce serait
+  juste remplacer un obstacle par un autre. Le coup de pénalité reste dû
+  quel que soit l'endroit où la balle finit par se poser. Repli sur
+  l'ancien comportement (retour au départ) si tout le chemin est un
+  obstacle. Un arbre qui bloque *directement* un coup (`blocks_trajectory`)
+  reste inchangé — décision explicite : la balle reste dans l'arbre, ça ne
+  gêne pas tant que le coup suivant est plus difficile (pas de pénalité de
+  coup, juste un lie pénalisant). Le panneau Dernier coup affiche
+  désormais où la balle a été droppée ("Dropped · the fairway" plutôt
+  qu'un message générique), volontairement court (`Dropped ·`/`Droppée ·`
+  plutôt que "Penalty, dropped on" / "Pénalité, balle droppée sur") car le
+  panneau ne fait que ~24 caractères utiles une fois la marge de gauche
+  retirée, et certains noms de terrain (FR "une zone à pénalité") auraient
+  rendu une formulation plus longue tronquée — vérifié dans le terminal,
+  pas juste en théorie.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
-- Système de "drop" plus réaliste (actuellement : retour pur et simple à la
-  position de départ du coup — une vraie implémentation dropperait au dernier
-  point de fairway valide le long de la trajectoire).
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
   `adjust_die_strength`...) a maintenant 15 tests unitaires dans
-  `src/main.rs` (41 au total avec `core`), mais rien qui simule un vrai
+  `src/main.rs` (49 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io

@@ -228,9 +228,14 @@ fn shot_message(shot: &ShotResult, strokes: u8, lang: Lang) -> String {
             Lang::Fr => format!("Dans le trou en {strokes} coups !"),
         }
     } else if shot.dropped {
+        // Volontairement plus court que "Penalty, ball dropped on {terrain}"
+        // (le rouge signale déjà la pénalité) : le panneau Dernier coup ne
+        // fait que ~24 caractères utiles une fois la marge de gauche
+        // retirée, et certains noms de terrain (ex. FR "une zone à
+        // pénalité") rendraient une formulation plus longue coupée.
         match lang {
-            Lang::En => "Penalty, ball dropped".to_string(),
-            Lang::Fr => "Pénalité, balle droppée".to_string(),
+            Lang::En => format!("Dropped · {}", terrain_name(shot.landing_terrain, lang)),
+            Lang::Fr => format!("Droppée · {}", terrain_name(shot.landing_terrain, lang)),
         }
     } else {
         match lang {

@@ -220,6 +220,43 @@ fn find_trajectory_block(hole: &Hole, from: Pos, target: (f32, f32)) -> Option<P
     None
 }
 
+/// Cherche, en remontant la trajectoire depuis `landing` vers `from`, la
+/// première case qui ne force pas elle-même un drop (eau, hors-limites) ni
+/// ne bloque la trajectoire (arbre) — le point où la balle doit finalement
+/// s'arrêter après un coup dans l'eau ou hors-limites, plutôt que de tout
+/// reprendre depuis la position de départ du coup. Saute par-dessus un
+/// arbre rencontré en chemin plutôt que de s'y arrêter : ce serait juste
+/// remplacer un obstacle par un autre. Ne s'applique qu'au drop
+/// (`forces_drop`, eau/hors-limites) — un arbre qui bloque directement un
+/// coup (`blocks_trajectory`) reste inchangé, la balle y reste (voir
+/// `find_trajectory_block`) : un lie difficile pour le coup suivant, pas
+/// un drop. Repli sur `from` si tout le chemin est un obstacle.
+fn backtrack_to_safe_landing(hole: &Hole, from: Pos, landing: Pos) -> Pos {
+    let total_dx = landing.x as f32 - from.x as f32;
+    let total_dy = landing.y as f32 - from.y as f32;
+    let flight_length = (total_dx * total_dx + total_dy * total_dy).sqrt();
+    let steps = flight_length.ceil().max(1.0) as usize;
+
+    for step in (0..steps).rev() {
+        let t = step as f32 / steps as f32;
+        let sx = (from.x as f32 + total_dx * t)
+            .round()
+            .clamp(0.0, (COURSE_WIDTH - 1) as f32) as usize;
+        let sy = (from.y as f32 + total_dy * t)
+            .round()
+            .clamp(0.0, (COURSE_HEIGHT - 1) as f32) as usize;
+        let candidate = Pos { x: sx, y: sy };
+        let profile = hole
+            .terrain_at(candidate)
+            .unwrap_or(TerrainKind::OutOfBounds)
+            .profile();
+        if !profile.forces_drop && !profile.blocks_trajectory {
+            return candidate;
+        }
+    }
+    from
+}
+
 /// Aperçu affichable avant de jouer un coup : où la balle peut
 /// raisonnablement atterrir selon le club et la direction visée, avant même
 /// de lancer le dé. Ne tient compte ni des obstacles sur la trajectoire
@@ -352,11 +389,11 @@ pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, wind: Wind, rng: &mut im
     let mut dropped = false;
 
     if landing_profile.forces_drop {
-        // Drop simplifié : on relance depuis la position de départ du coup.
-        // (Une version plus avancée pourrait dropper au dernier point de
-        // fairway valide le long de la trajectoire.)
-        landing = from;
-        landing_terrain = start_terrain;
+        // Le coup de pénalité reste basé sur le hazard d'origine (`penalty_strokes`
+        // déjà figé ci-dessus), quel que soit l'endroit où la balle finit par
+        // se poser après remontée de la trajectoire.
+        landing = backtrack_to_safe_landing(hole, from, landing);
+        landing_terrain = hole.terrain_at(landing).unwrap_or(TerrainKind::OutOfBounds);
         dropped = true;
     }
 
@@ -729,6 +766,101 @@ mod tests {
             // que replacer la balle : le coup de pénalité reste donc dû.
             assert_eq!(result.penalty_strokes, 1);
         }
+    }
+
+    /// Trou fairway (colonnes 0..44), puis une bande d'eau (44..70), sur une
+    /// seule ligne — pour des tests de drop déterministes sur une
+    /// trajectoire purement horizontale.
+    fn hole_with_water_band(water_start: usize, water_end: usize) -> Hole {
+        let mut lines = Vec::with_capacity(COURSE_HEIGHT);
+        for y in 0..COURSE_HEIGHT {
+            let mut row = vec!['.'; COURSE_WIDTH];
+            if y == COURSE_HEIGHT / 2 {
+                row[0] = 'D';
+                for x in water_start..water_end {
+                    row[x] = '~';
+                }
+                row[COURSE_WIDTH - 1] = 'H';
+            }
+            lines.push(row.into_iter().collect::<String>());
+        }
+        let raw = format!("name: \"Test drop\"\npar: 4\n---\n{}\n", lines.join("\n"));
+        Hole::parse(&raw).unwrap()
+    }
+
+    #[test]
+    fn water_drop_backtracks_to_the_fairway_short_of_the_hazard() {
+        let hole = hole_with_water_band(45, 70);
+        let shot = Shot {
+            club: Club::Driver,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 6, // portée ~48 cases : atterrit dans la bande d'eau (45-70)
+        };
+        let mut rng = Pcg32::new(7, 7);
+        let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
+
+        assert!(result.dropped);
+        assert_eq!(result.penalty_strokes, 1, "la pénalité reste due même si la balle ne finit pas dans l'eau");
+        assert_eq!(result.landing_terrain, TerrainKind::Fairway);
+        assert!(
+            result.landing.x < 45,
+            "doit s'arrêter avant l'eau, pas dedans (x={})",
+            result.landing.x
+        );
+        assert!(
+            result.landing.x > 20,
+            "doit s'arrêter près de l'eau, pas revenir tout au départ (x={})",
+            result.landing.x
+        );
+    }
+
+    #[test]
+    fn water_drop_backtrack_skips_over_a_tree_in_the_way() {
+        // Une bande d'arbres juste avant l'eau : remonter la trajectoire ne
+        // doit pas s'arrêter dessus (ce serait juste remplacer un obstacle
+        // par un autre), mais continuer jusqu'au fairway au-delà.
+        let mut hole = hole_with_water_band(45, 70);
+        let row = COURSE_HEIGHT / 2;
+        for x in 40..45 {
+            hole.tiles[row][x] = TerrainKind::Tree;
+        }
+
+        let shot = Shot {
+            club: Club::Driver,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 6,
+        };
+        let mut rng = Pcg32::new(7, 7);
+        let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
+
+        assert!(result.dropped);
+        assert_eq!(result.landing_terrain, TerrainKind::Fairway);
+        assert!(
+            result.landing.x < 40,
+            "doit sauter par-dessus la bande d'arbres (40-44), pas s'y arrêter (x={})",
+            result.landing.x
+        );
+    }
+
+    #[test]
+    fn water_drop_falls_back_to_the_start_if_the_whole_path_is_hazard() {
+        // Rien que de l'eau entre le départ et l'atterrissage : aucune case
+        // sûre à trouver en remontant, on retombe sur l'ancien comportement
+        // (retour pur à la position de départ du coup).
+        let mut hole = hole_with_water_band(1, 70);
+        let row = COURSE_HEIGHT / 2;
+        hole.tiles[row][0] = TerrainKind::Tee;
+
+        let shot = Shot {
+            club: Club::Driver,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 6,
+        };
+        let mut rng = Pcg32::new(7, 7);
+        let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
+
+        assert!(result.dropped);
+        assert_eq!(result.landing, hole.tee);
     }
 
     #[test]

@@ -196,8 +196,22 @@
       avec le zoom (v0.3, ci-dessus) pour que le joueur puisse "lire" la
       pente avant de putter.
 - [ ] Historique des coups joués sur le trou courant, affiché dans le HUD
-- [ ] Amélioration du drop : reprise au dernier point de fairway valide le long
-      de la trajectoire plutôt qu'un retour pur à la position de départ
+- [x] Amélioration du drop : reprise au dernier point valide le long de la
+      trajectoire plutôt qu'un retour pur à la position de départ
+      (`backtrack_to_safe_landing()` dans `shot.rs`) — remonte depuis le
+      point d'impact et s'arrête à la première case qui ne force pas
+      elle-même un drop (eau, hors-limites) ni ne bloque la trajectoire
+      (arbre, sauté par-dessus plutôt qu'un obstacle remplacé par un
+      autre). Le coup de pénalité reste dû quel que soit l'endroit où la
+      balle finit par se poser ; repli sur l'ancien comportement (retour
+      au départ) si tout le chemin est un obstacle. Scope volontairement
+      limité au drop (eau/hors-limites) : un arbre qui bloque
+      *directement* un coup reste inchangé (la balle y reste, lie
+      pénalisant pour le coup suivant, pas de coup de pénalité) — décision
+      explicite, pas un oubli. Panneau Dernier coup mis à jour pour
+      afficher où la balle a été droppée plutôt qu'un message générique
+      ("Dropped · the fairway"/"Droppée · le fairway"), formulé court car
+      le panneau ne fait que ~24 caractères utiles.
 - [ ] Animation simple du déplacement de la balle (interpolation position par position)
 - [ ] Panneau "Dernier coup" enrichi : distance déduite + club utilisé, en
       plus du dé déjà affiché (ex. `Driver — Dé: 5 — Distance: 18 — Balle

@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left border and each line's text instead of it touching the frame
   directly. The title panel also dropped its own "Divotty" border label,
   since the icon and version are already shown inside.
+- A ball hit into water or out of bounds no longer resets all the way back
+  to where the shot was played from. It now backtracks along the shot's
+  own path and stops at the first safe spot before the hazard — hopping
+  back over a tree if there's one in the way too, so it doesn't just trade
+  one obstacle for another. The penalty stroke is still charged either
+  way. The last-shot panel now says where the ball ended up ("Dropped ·
+  the fairway") instead of a generic message. A tree that blocks a shot
+  directly is unaffected by this — the ball still stays put in the tree,
+  no penalty, just a tougher next shot.
 
 ### Fixed
 - The ball marker disappeared after every shot when zoom was off — a
