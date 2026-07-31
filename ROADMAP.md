@@ -416,6 +416,36 @@
           carte" ci-dessous (la sauvegarde du builder *est* déjà une
           validation) — à réévaluer si un outil de lint séparé reste utile
           une fois le builder construit.
+- [ ] Builder de parcours : assembler des trous existants (créés par le
+      builder de trous) dans un parcours — `course.yaml` + choix de
+      l'ordre. Idée discutée mais **non implémentée pour l'instant**, à
+      reprendre après la phase 9 du builder de trous (charger un fichier
+      existant), dont le sélecteur de fichiers serait réutilisé ici pour
+      choisir parmi les trous disponibles.
+      - Écran de sélection revu : lister les parcours (comme aujourd'hui),
+        puis une deuxième liste des trous existants qui ne sont insérés
+        dans aucun parcours — pour repérer facilement ce qui reste à
+        assembler.
+      - **Un trou peut être utilisé dans plusieurs parcours.** Modèle
+        retenu pour ça (déjà discuté et tranché, à l'opposé d'une
+        bibliothèque de trous référencée par pointeur) : une bibliothèque
+        de trous distincts, et "insérer un trou dans un parcours" = **le
+        dupliquer** (copier le fichier `.course`) dans le dossier du
+        parcours concerné, comme n'importe quel autre fichier de trou.
+        Choisi plutôt qu'un système de références/pointeurs vers un trou
+        partagé pour deux raisons : ça ne change strictement rien au
+        format actuel ni à `Course::load_from_dir` (chaque parcours reste
+        un dossier autonome qui possède ses propres fichiers, cohérent
+        avec le principe déjà appliqué "partager un parcours = copier le
+        dossier", voir item suivant) et évite d'introduire une nouvelle
+        notion de résolution de chemin/lookup dans un format par ailleurs
+        volontairement stable (voir `CLAUDE.md`, "Format `.course` stable").
+        Contrepartie assumée : une fois dupliqué, un trou vit
+        indépendamment dans chaque parcours qui l'utilise — corriger
+        l'original dans la bibliothèque ne se répercute pas
+        automatiquement sur les copies déjà distribuées. Pas vu comme un
+        problème : ça permet même de personnaliser légèrement la copie
+        d'un trou pour un parcours donné sans affecter les autres.
 - [ ] Partage de parcours créés avec le builder — pas encore tranché
       comment, mais un fichier `.course`/`course.yaml` est déjà du texte
       brut : le partage "à la main" (copier le fichier dans le dossier
