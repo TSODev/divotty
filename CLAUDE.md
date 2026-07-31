@@ -83,19 +83,30 @@ seule règle de zone basse (pas une simulation d'arc de trajectoire).
     `course.rs`/`shot.rs`. À reconsidérer si le remplissage à vide devient
     gênant en pratique, possiblement en lien avec le futur builder de
     trous.
-- **Chemins relatifs au cwd, pas au binaire** : `courses/` et `save.yaml`
-  sont résolus relativement au répertoire courant d'exécution. Lancer le
-  jeu depuis la racine du dépôt (`cargo run`). Si `courses/` est absent
-  (ex. après un `cargo install`, le dossier reste dans le crate source,
-  jamais copié à côté du binaire installé), le jeu bascule sur les vrais
-  parcours (`courses/demo/` et `courses/quick3/`) **embarqués dans le
-  binaire à la compilation** (`include_str!`, voir `embedded_courses()`
-  dans `src/main.rs`) — pas un trou générique de secours (voir historique
-  ci-dessous, ça l'a été jusqu'à ce que ce soit corrigé avant 0.2.0). Ces
-  parcours embarqués ne sont pas sauvegardables (pas de dossier associé,
-  comme n'importe quel parcours sans `course_dir`). Un test
-  (`embedded_courses_parse_and_match_the_real_courses_on_disk`) vérifie
-  que le contenu embarqué reste parsable à chaque `cargo test`.
+- **Répertoire de données résolu, pas figé sur le cwd** : `courses/`,
+  `save.yaml` et `courses/_library/` sont tous préfixés par une racine de
+  données (`resolve_data_root()` dans `src/main.rs`) calculée une fois au
+  lancement, pas par un chemin cwd en dur. Chaîne à 3 niveaux :
+  1. `./courses` (cwd) si ce dossier existe déjà — workflow de
+     développement inchangé, lancer le jeu depuis la racine du dépôt
+     (`cargo run`) continue de fonctionner exactement comme avant.
+  2. Sinon le dossier de données de la plateforme (`directories::
+     ProjectDirs`, `~/.local/share/divotty` sur Linux, équivalents
+     macOS/Windows) — corrige le cas `cargo install` : un binaire installé
+     et lancé depuis n'importe où obtient un emplacement stable plutôt
+     qu'un `courses/`/`save.yaml` différent à chaque répertoire courant.
+     Ce dossier reste la cible même s'il est encore vide (rien n'y a
+     encore été sauvegardé) — seule la *liste* des parcours affichés
+     retombe alors sur l'étape 3, pas l'emplacement d'écriture.
+  3. Si aucun des deux n'a de parcours, le jeu bascule sur les vrais
+     parcours (`courses/demo/` et `courses/quick3/`) **embarqués dans le
+     binaire à la compilation** (`include_str!`, voir `embedded_courses()`
+     dans `src/main.rs`) — pas un trou générique de secours (voir
+     historique ci-dessous, ça l'a été jusqu'à ce que ce soit corrigé avant
+     0.2.0). Ces parcours embarqués ne sont pas sauvegardables (pas de
+     dossier associé, comme n'importe quel parcours sans `course_dir`). Un
+     test (`embedded_courses_parse_and_match_the_real_courses_on_disk`)
+     vérifie que le contenu embarqué reste parsable à chaque `cargo test`.
 
 ## Architecture (rappel rapide)
 
@@ -307,13 +318,24 @@ Fait et testé :
   `to_course_string` — élimine une duplication de calcul d'offset qui
   existait entre les deux), l'orientation étant déduite du rapport
   largeur/hauteur de la grille chargée.
+- Répertoire de données résolu (`resolve_data_root()`/
+  `resolve_data_root_from()`, testée, voir principe directeur ci-dessus) :
+  `courses/`, `save.yaml` et `courses/_library/` suivent tous la même
+  racine calculée une fois au lancement, avec repli sur le dossier de
+  données de la plateforme (`directories::ProjectDirs`) si `courses/` est
+  absent du cwd. Nouvelle dépendance `directories`. Vérifié en tmux :
+  lancé depuis la racine du dépôt, comportement inchangé (sauvegarde et
+  bibliothèque restent locales) ; lancé depuis un dossier sans `courses/`
+  (simulant un `cargo install`), sauvegarde et trou du builder atterrissent
+  dans `~/.local/share/divotty/` et sont retrouvés à la relance depuis ce
+  même dossier vide.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 38 tests unitaires dans
-  `src/main.rs` (81 au total avec `core`), mais rien qui simule un vrai
+  `adjust_die_strength`...) a maintenant 41 tests unitaires dans
+  `src/main.rs` (84 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io

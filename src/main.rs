@@ -15,6 +15,7 @@ use crate::tui::{
     BuilderHeaderView, BuilderMode, BuilderOrientation, BuilderSetupView, BuilderView,
     CourseMenuState, CourseView, HolePickerView, Lang, ScorecardView, SidebarState, Viewport,
 };
+use directories::ProjectDirs;
 use rand::Rng;
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction as LayoutDirection, Layout}, Terminal};
 use serde::{Deserialize, Serialize};
@@ -31,16 +32,50 @@ const SAVE_PATH: &str = "save.yaml";
 /// réduction utile sans ce piège.
 const DIE_STRENGTH_FLOOR: u8 = 3;
 
-/// Liste les parcours jouables sous `courses/`, avec leur dossier d'origine
-/// (nécessaire pour recharger/sauvegarder). Si `courses/` n'existe pas ou ne
-/// contient rien (ex. après un `cargo install`, voir `CLAUDE.md` — le
-/// dossier reste dans le crate source, pas copié à côté du binaire
-/// installé), bascule sur les parcours embarqués (`embedded_courses()`) —
-/// sans dossier associé, donc non sauvegardables.
-fn discover_courses() -> Result<Vec<(Option<PathBuf>, Course)>> {
-    let root = Path::new("courses");
+/// Racine de données effective pour cette exécution — préfixe appliqué à
+/// `courses/`, `save.yaml` et `courses/_library/` partout dans le fichier.
+/// Deux niveaux, pas un remplacement pur et simple du cwd (voir
+/// `ROADMAP.md`, "Répertoire de données par défaut") :
+/// 1. `./courses` (chemin vide, donc relatif au cwd) si ce dossier existe
+///    déjà — workflow de développement inchangé (`cargo run` depuis le
+///    dépôt cloné).
+/// 2. Sinon le dossier de données de la plateforme (`ProjectDirs`,
+///    `~/.local/share/divotty` sur Linux, équivalents macOS/Windows) — un
+///    binaire installé via `cargo install` et lancé depuis n'importe où
+///    obtient ainsi un emplacement stable plutôt qu'un `courses/`
+///    différent à chaque répertoire courant. Reste la cible même s'il est
+///    encore vide (rien n'y a encore été sauvegardé) : seule la *liste*
+///    des parcours affichés retombe sur les parcours embarqués
+///    (`embedded_courses`, voir `discover_courses`) dans ce cas, pas
+///    l'emplacement où écrire les futures sauvegardes/trous du builder.
+/// Repli sur le cwd si `ProjectDirs` échoue (rare : `$HOME` non résolvable).
+fn resolve_data_root() -> PathBuf {
+    resolve_data_root_from(
+        Path::new("courses").exists(),
+        ProjectDirs::from("", "", "divotty").map(|dirs| dirs.data_dir().to_path_buf()),
+    )
+}
+
+/// Logique pure derrière `resolve_data_root`, testable sans toucher au vrai
+/// système de fichiers ni à `$HOME`.
+fn resolve_data_root_from(cwd_has_courses: bool, platform_data_dir: Option<PathBuf>) -> PathBuf {
+    if cwd_has_courses {
+        PathBuf::new()
+    } else {
+        platform_data_dir.unwrap_or_default()
+    }
+}
+
+/// Liste les parcours jouables sous `<data_root>/courses/`, avec leur
+/// dossier d'origine (nécessaire pour recharger/sauvegarder). Si ce dossier
+/// n'existe pas ou ne contient rien (ex. premier lancement après un
+/// `cargo install`, avant toute sauvegarde), bascule sur les parcours
+/// embarqués (`embedded_courses()`) — sans dossier associé, donc non
+/// sauvegardables.
+fn discover_courses(data_root: &Path) -> Result<Vec<(Option<PathBuf>, Course)>> {
+    let root = data_root.join("courses");
     if root.exists() {
-        let found = Course::discover(root)?;
+        let found = Course::discover(&root)?;
         if !found.is_empty() {
             return Ok(found.into_iter().map(|(dir, course)| (Some(dir), course)).collect());
         }
@@ -155,7 +190,7 @@ struct SaveData {
     die_strength: u8,
 }
 
-fn save_game(state: &GameState) -> Result<()> {
+fn save_game(state: &GameState, data_root: &Path) -> Result<()> {
     let course_dir = state
         .course_dir
         .clone()
@@ -171,12 +206,16 @@ fn save_game(state: &GameState) -> Result<()> {
         scorecard: state.scorecard.clone(),
         die_strength: state.die_strength,
     };
-    std::fs::write(SAVE_PATH, serde_yaml::to_string(&data)?)?;
+    let save_path = data_root.join(SAVE_PATH);
+    if let Some(parent) = save_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(save_path, serde_yaml::to_string(&data)?)?;
     Ok(())
 }
 
-fn load_game(lang: Lang) -> Result<GameState> {
-    let raw = std::fs::read_to_string(SAVE_PATH)?;
+fn load_game(lang: Lang, data_root: &Path) -> Result<GameState> {
+    let raw = std::fs::read_to_string(data_root.join(SAVE_PATH))?;
     let data: SaveData = serde_yaml::from_str(&raw)?;
     let course = Course::load_from_dir(&data.course_dir)?;
     let hole_count = course.holes.len();
@@ -414,7 +453,8 @@ impl GameState {
 }
 
 fn main() -> Result<()> {
-    let courses = discover_courses()?;
+    let data_root = resolve_data_root();
+    let courses = discover_courses(&data_root)?;
 
     enable_raw_mode()?;
     let mut stdout_handle = stdout();
@@ -425,12 +465,12 @@ fn main() -> Result<()> {
     let mut lang = Lang::default();
     let result = (|| -> Result<()> {
         loop {
-            let has_save = Path::new(SAVE_PATH).exists();
+            let has_save = data_root.join(SAVE_PATH).exists();
             match select_course(&mut terminal, &courses, &mut lang, has_save)? {
                 MenuChoice::Quit => return Ok(()),
                 MenuChoice::Resume => {
-                    let mut state = load_game(lang)?;
-                    match run_loop(&mut terminal, &mut state)? {
+                    let mut state = load_game(lang, &data_root)?;
+                    match run_loop(&mut terminal, &mut state, &data_root)? {
                         LoopExit::Quit => return Ok(()),
                         LoopExit::BackToMenu => continue,
                         LoopExit::RoundComplete { course_name, course_difficulty, entries } => {
@@ -447,7 +487,7 @@ fn main() -> Result<()> {
                     // choisir/rejouer le même parcours sans relancer le jeu.
                     let (course_dir, course) = courses[index].clone();
                     let mut state = GameState::new(course_dir, course, lang);
-                    match run_loop(&mut terminal, &mut state)? {
+                    match run_loop(&mut terminal, &mut state, &data_root)? {
                         LoopExit::Quit => return Ok(()),
                         LoopExit::BackToMenu => continue,
                         LoopExit::RoundComplete { course_name, course_difficulty, entries } => {
@@ -459,7 +499,7 @@ fn main() -> Result<()> {
                     }
                 }
                 MenuChoice::NewHole => {
-                    let Some(launch) = pick_hole_to_build(&mut terminal, &mut lang)? else {
+                    let Some(launch) = pick_hole_to_build(&mut terminal, &mut lang, &data_root)? else {
                         continue;
                     };
                     let mut builder = match launch {
@@ -479,7 +519,7 @@ fn main() -> Result<()> {
                             )
                         }
                     };
-                    match run_builder(&mut terminal, &mut builder)? {
+                    match run_builder(&mut terminal, &mut builder, &data_root)? {
                         BuilderExit::Quit => return Ok(()),
                         BuilderExit::BackToMenu => continue,
                     }
@@ -577,6 +617,7 @@ fn select_course<B: ratatui::backend::Backend>(
 fn run_loop<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     state: &mut GameState,
+    data_root: &Path,
 ) -> Result<LoopExit> {
     loop {
         let finished = state.finished();
@@ -697,7 +738,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                         KeyCode::Char('-') => state.adjust_die_strength(-1),
                         KeyCode::Char('+') => state.adjust_die_strength(1),
                         KeyCode::Char('s') | KeyCode::Char('S') => {
-                            state.just_saved = save_game(state).is_ok();
+                            state.just_saved = save_game(state, data_root).is_ok();
                         }
                         KeyCode::Char('l') | KeyCode::Char('L') => state.lang = state.lang.next(),
                         KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = !state.zoom,
@@ -780,10 +821,11 @@ fn terrain_from_builder_key(c: char) -> Option<TerrainKind> {
     TerrainKind::from_char(c.to_ascii_uppercase())
 }
 
-/// Dossier où le builder sauvegarde systématiquement chaque trou — une
-/// bibliothèque de trous pas encore assignés à un parcours, en attendant le
-/// futur builder de parcours (voir `ROADMAP.md`). Le joueur ne choisit
-/// jamais l'emplacement lui-même, seulement un nom de fichier.
+/// Dossier (suffixe relatif à `data_root`, voir `resolve_data_root`) où le
+/// builder sauvegarde systématiquement chaque trou — une bibliothèque de
+/// trous pas encore assignés à un parcours, en attendant le futur builder
+/// de parcours (voir `ROADMAP.md`). Le joueur ne choisit jamais
+/// l'emplacement lui-même, seulement un nom de fichier.
 const HOLE_LIBRARY_DIR: &str = "courses/_library";
 
 /// Nettoie un nom de fichier tapé à la main pour la bibliothèque de trous :
@@ -1072,8 +1114,10 @@ enum BuilderLaunch {
 fn pick_hole_to_build<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     lang: &mut Lang,
+    data_root: &Path,
 ) -> Result<Option<BuilderLaunch>> {
-    let files = discover_hole_files(Path::new("courses"));
+    let courses_root = data_root.join("courses");
+    let files = discover_hole_files(&courses_root);
     let mut selected = 0usize;
     let total = files.len() + 1; // +1 pour "+ Nouveau trou"
     let mut confirm_target: Option<PathBuf> = None;
@@ -1086,6 +1130,7 @@ fn pick_hole_to_build<B: ratatui::backend::Backend>(
                     files: &files,
                     selected,
                     confirm_target: confirm_target.as_deref(),
+                    courses_root: &courses_root,
                 },
                 frame.size(),
             );
@@ -1172,6 +1217,7 @@ fn setup_builder<B: ratatui::backend::Backend>(
 fn run_builder<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     state: &mut BuilderState,
+    data_root: &Path,
 ) -> Result<BuilderExit> {
     loop {
         terminal.draw(|frame| {
@@ -1286,7 +1332,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                             }
                             let base_name = sanitize_hole_filename(&state.text_input);
                             let path =
-                                Path::new(HOLE_LIBRARY_DIR).join(format!("{base_name}.course"));
+                                data_root.join(HOLE_LIBRARY_DIR).join(format!("{base_name}.course"));
                             if path.exists() {
                                 // Ne jamais ajouter un compteur automatique
                                 // ici : ça empêcherait de mettre à jour un
@@ -1902,6 +1948,23 @@ mod tests {
     fn discover_hole_files_returns_empty_for_a_missing_root() {
         let root = std::env::temp_dir().join("divotty_test_discover_never_exists_xyz");
         assert!(discover_hole_files(&root).is_empty());
+    }
+
+    #[test]
+    fn resolve_data_root_prefers_cwd_when_courses_exists() {
+        let platform_dir = Some(PathBuf::from("/home/x/.local/share/divotty"));
+        assert_eq!(resolve_data_root_from(true, platform_dir), PathBuf::new());
+    }
+
+    #[test]
+    fn resolve_data_root_falls_back_to_platform_dir_when_cwd_has_no_courses() {
+        let platform_dir = PathBuf::from("/home/x/.local/share/divotty");
+        assert_eq!(resolve_data_root_from(false, Some(platform_dir.clone())), platform_dir);
+    }
+
+    #[test]
+    fn resolve_data_root_falls_back_to_cwd_if_platform_dir_unavailable() {
+        assert_eq!(resolve_data_root_from(false, None), PathBuf::new());
     }
 
     /// Grille déclarée `width`x`height` avec un `D`/`H` aux coins opposés —

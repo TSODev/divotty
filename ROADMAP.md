@@ -597,42 +597,39 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
 - [x] Publication sur crates.io — `divotty` v0.2.0 en ligne,
       `cargo install divotty` fonctionnel, y compris les vrais parcours
       embarqués (voir `CLAUDE.md`)
-- [ ] **Important** — Répertoire de données par défaut indépendant du
-      répertoire courant. Aujourd'hui `courses/`, `save.yaml` et
-      `courses/_library/` (bibliothèque du builder) sont tous résolus
-      relativement au cwd (voir `CLAUDE.md`, "Chemins relatifs au cwd, pas
-      au binaire") — choix délibéré à l'origine pour rester simple et
-      portable (copier le dossier du repo suffit, aucune dépendance de
-      résolution de chemin plateforme), et qui correspond bien au workflow
-      de développement actuel (`cargo run` depuis la racine du dépôt).
-      Mais une fois installé via `cargo install`, l'attente normale d'un
-      outil en ligne de commande est de fonctionner depuis n'importe quel
-      répertoire — aujourd'hui, lancer `divotty` depuis deux dossiers
-      différents donne deux `save.yaml`/bibliothèques indépendants (déjà
-      la cause du bug corrigé avant 0.2.0 qui a mené aux parcours
-      embarqués). Signalé comme important après une discussion, pas encore
-      implémenté.
+- [x] **Important** — Répertoire de données par défaut indépendant du
+      répertoire courant. Avant : `courses/`, `save.yaml` et
+      `courses/_library/` (bibliothèque du builder) étaient tous résolus
+      relativement au cwd — choix délibéré à l'origine pour rester simple
+      et portable, cohérent avec le workflow de développement (`cargo run`
+      depuis la racine du dépôt), mais qui cassait l'attente normale d'un
+      outil installé via `cargo install` (lancer `divotty` depuis deux
+      dossiers différents donnait deux `save.yaml`/bibliothèques
+      indépendants — déjà la cause du bug corrigé avant 0.2.0 qui a mené
+      aux parcours embarqués).
 
-      Décisions déjà prises pendant la discussion :
-      - Pas `~/.config/divotty` en dur : `~/.config` (XDG_CONFIG_HOME) est
-        prévu pour des *réglages*, pas pour du *contenu* créé par
-        l'utilisateur (parcours, sauvegardes) — la bonne catégorie XDG
-        serait plutôt `~/.local/share/divotty` (XDG_DATA_HOME) sur Linux.
-        Coder ce chemin en dur serait de toute façon faux sur macOS
-        (`~/Library/Application Support`) et Windows (`%APPDATA%`).
-      - Utiliser le crate `directories` (`ProjectDirs::data_dir()`) plutôt
-        que résoudre les chemins à la main — léger, standard, donne le bon
-        dossier par plateforme automatiquement. Nouvelle dépendance à
-        peser face à l'ethos "simplicité", mais très répandue et petite.
-      - Chaîne de repli à 3 niveaux plutôt que de remplacer le cwd : (1)
-        `./courses` (cwd, inchangé — garde le workflow de développement
-        actuel intact) ; (2) dossier de données de la plateforme (nouveau
-        — résout le cas `cargo install`) ; (3) parcours embarqués dans le
-        binaire (déjà existant, dernier recours). `save.yaml` et
-        `courses/_library/` suivraient la même base résolue que
-        `courses/` (pas toujours forcés vers le dossier plateforme même
-        quand on tourne depuis le repo, pour ne pas surprendre le workflow
-        de dev).
+      Implémenté avec la chaîne de repli à 3 niveaux décidée en
+      discussion : `resolve_data_root()` dans `src/main.rs` (logique pure
+      testée séparément dans `resolve_data_root_from()`) calcule une seule
+      fois au lancement (1) `./courses` (cwd) si ce dossier existe déjà —
+      workflow de développement inchangé ; (2) sinon le dossier de données
+      de la plateforme (`directories::ProjectDirs::data_dir()` — nouvelle
+      dépendance — `~/.local/share/divotty` sur Linux, équivalents
+      macOS/Windows ; XDG_DATA_HOME plutôt que XDG_CONFIG_HOME, car
+      `courses`/sauvegardes sont du contenu créé par le joueur, pas des
+      réglages) ; la *liste* des parcours affichés retombe sur les
+      parcours embarqués (`embedded_courses`) si aucun des deux n'a de
+      contenu, mais le dossier de données de la plateforme reste la cible
+      d'écriture même vide. `save.yaml` et `courses/_library/` suivent la
+      même racine que `courses/` (`data_root`, passé en paramètre à
+      `discover_courses`/`load_game`/`save_game`/`pick_hole_to_build`/
+      `run_builder`/`run_loop` plutôt que des chemins en dur). Vérifié en
+      tmux : lancé depuis la racine du dépôt, comportement inchangé
+      (sauvegarde et bibliothèque restent locales, aucun fichier écrit
+      dans le dossier plateforme) ; lancé depuis un dossier sans
+      `courses/` (simulant un `cargo install`), sauvegarde et trou du
+      builder atterrissent dans `~/.local/share/divotty/` et sont
+      retrouvés à la relance depuis ce même dossier vide.
 
 ## Idées non priorisées
 - Mode multijoueur local (tour par tour, même terminal)

@@ -48,6 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same as a brand-new hole).
 
 ### Changed
+- Courses, save files, and the hole builder's library no longer depend on
+  which directory you happen to launch `divotty` from. If `./courses`
+  exists next to where you run it, behavior is unchanged (the usual
+  `cargo run` workflow); otherwise the game now uses a proper per-user data
+  directory (`~/.local/share/divotty` on Linux, and the equivalent on
+  macOS/Windows) instead of scattering a `save.yaml` and an empty
+  `courses/_library/` into whatever folder you happened to be in — the
+  common case for anyone using `cargo install divotty` and running it from
+  anywhere.
 - Putting is less of a coin flip now: the Putter's accuracy improves the
   closer the ball already is to the hole, instead of a fixed dispersion
   regardless of distance. A short putt left by a good approach shot is

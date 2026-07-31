@@ -162,6 +162,12 @@ pub struct HolePickerView<'a> {
     /// `Some(chemin)` quand un fichier vient d'être choisi et qu'on attend
     /// la confirmation modifier/dupliquer.
     pub confirm_target: Option<&'a Path>,
+    /// Racine `courses/` effective (préfixée par `data_root`, voir
+    /// `resolve_data_root` dans `main.rs`) — dépouillée de l'affichage pour
+    /// ne montrer que le chemin relatif (`demo/hole_01.course`), même
+    /// quand la racine réelle est un chemin absolu du dossier de données
+    /// de la plateforme.
+    pub courses_root: &'a Path,
 }
 
 impl<'a> Widget for HolePickerView<'a> {
@@ -189,7 +195,7 @@ impl<'a> Widget for HolePickerView<'a> {
 
         for (i, path) in self.files.iter().enumerate() {
             let label = path
-                .strip_prefix("courses")
+                .strip_prefix(self.courses_root)
                 .unwrap_or(path)
                 .display()
                 .to_string();
@@ -205,7 +211,7 @@ impl<'a> Widget for HolePickerView<'a> {
         let hint_y = inner.y + inner.height.saturating_sub(1);
         let hint = if let Some(path) = self.confirm_target {
             let label = path
-                .strip_prefix("courses")
+                .strip_prefix(self.courses_root)
                 .unwrap_or(path)
                 .display()
                 .to_string();
