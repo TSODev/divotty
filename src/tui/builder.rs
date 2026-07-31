@@ -58,6 +58,27 @@ fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
     }
 }
 
+/// Comme `write_line`, mais chaque segment garde son propre style — utilisé
+/// pour la légende de terrain, où chaque entrée doit reprendre la couleur
+/// exacte de son terrain sur la carte (`terrain_style` dans `render.rs`)
+/// plutôt qu'une seule couleur uniforme pour toute la ligne.
+fn write_spans(buf: &mut Buffer, area: Rect, y: u16, segments: &[(String, Style)]) {
+    if y >= area.y + area.height {
+        return;
+    }
+    let mut x = area.x;
+    let max_x = area.x + area.width;
+    for (text, style) in segments {
+        for ch in text.chars() {
+            if x >= max_x {
+                return;
+            }
+            buf.get_mut(x, y).set_char(ch).set_style(*style);
+            x += 1;
+        }
+    }
+}
+
 /// Petit écran d'en-tête avant de dessiner un nouveau trou : le par visé
 /// (seul champ obligatoire) et l'orientation, qui ensemble suggèrent une
 /// taille de grille cohérente avec les distances de club calibrées ailleurs
@@ -117,14 +138,79 @@ impl Widget for BuilderSetupView {
     }
 }
 
+/// Légende des caractères de terrain reconnus (voir `TerrainKind::from_char`)
+/// — même légende que celle imprimée sur `tools/hole_design_canvas.pdf`,
+/// pour ne pas avoir à s'en souvenir par cœur en dessinant. Les lettres
+/// sont insensibles à la casse à la frappe (voir `run_builder` : le
+/// caractère tapé est mis en majuscule avant d'être résolu), la légende ne
+/// montre donc que la forme majuscule pour rester lisible.
+/// Légende de terrain sous forme de segments colorés, un par
+/// `TerrainKind`, chacun repris avec la couleur exacte que ce terrain
+/// affiche sur la carte (`terrain_style` dans `render.rs`) plutôt qu'une
+/// seule couleur uniforme — pour que la légende serve aussi de repère
+/// visuel cohérent avec ce que le joueur voit en dessinant.
+fn terrain_legend_segments(lang: Lang) -> Vec<(String, Style)> {
+    const ITEMS: [(TerrainKind, &str, &str); 10] = [
+        (TerrainKind::Tee, "tee", "départ"),
+        (TerrainKind::Fairway, "fairway", "fairway"),
+        (TerrainKind::Rough, "rough", "rough"),
+        (TerrainKind::Bunker, "bunker", "bunker"),
+        (TerrainKind::Water, "water", "eau"),
+        (TerrainKind::Tree, "tree", "arbre"),
+        (TerrainKind::Green, "green", "green"),
+        (TerrainKind::Hole, "hole", "trou"),
+        (TerrainKind::PenaltyZone, "penalty", "pénalité"),
+        (TerrainKind::OutOfBounds, "OOB", "hors-limites"),
+    ];
+    let separator = Style::default().fg(Color::DarkGray);
+    let mut segments = Vec::with_capacity(ITEMS.len() * 2 + 1);
+    for (i, (kind, label_en, label_fr)) in ITEMS.into_iter().enumerate() {
+        if i > 0 {
+            segments.push((" ".to_string(), separator));
+        }
+        let (_, color) = terrain_style(kind);
+        let key = kind.to_char();
+        let key_display = match (key, lang) {
+            (' ', Lang::En) => "(space)".to_string(),
+            (' ', Lang::Fr) => "(espace)".to_string(),
+            (c, _) => c.to_string(),
+        };
+        let label = if lang == Lang::En { label_en } else { label_fr };
+        segments.push((
+            format!("{key_display}={label}"),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ));
+    }
+    segments.push((
+        match lang {
+            Lang::En => "  — letters case-insensitive".to_string(),
+            Lang::Fr => "  — lettres insensibles à la casse".to_string(),
+        },
+        separator,
+    ));
+    segments
+}
+
+/// Nombre de lignes/colonnes restantes avant que l'avancée automatique de la
+/// frappe (voir `BuilderState::advance_cursor`) n'atteigne la dernière case
+/// et s'arrête net — sert à colorer l'indicateur de position en
+/// avertissement un peu avant d'y arriver, pas seulement une fois dessus.
+const NEAR_END_THRESHOLD: usize = 3;
+
 /// Bandeau d'information au-dessus de la grille en cours d'édition : nom,
-/// par, orientation, et la ligne d'instructions ou de saisie qui dépend du
-/// `mode` courant (dessin, édition du nom, saisie du chemin de sauvegarde).
+/// par, orientation, légende des terrains, position courante dans le sens
+/// de l'avancée automatique (avec avertissement à l'approche de la
+/// dernière ligne/colonne), et la ligne d'instructions ou de saisie qui
+/// dépend du `mode` courant (dessin, édition du nom, saisie du chemin de
+/// sauvegarde).
 pub struct BuilderHeaderView<'a> {
     pub lang: Lang,
     pub name: &'a str,
     pub par: u8,
     pub orientation: BuilderOrientation,
+    pub cursor: Pos,
+    pub grid_width: usize,
+    pub grid_height: usize,
     pub mode: BuilderMode,
     pub text_input: &'a str,
     pub message: Option<&'a str>,
@@ -157,7 +243,77 @@ impl<'a> Widget for BuilderHeaderView<'a> {
         };
         write_line(buf, inner, inner.y, &info_line, Style::default().fg(Color::White));
 
-        let second_line = if self.quit_confirm {
+        write_spans(buf, inner, inner.y + 1, &terrain_legend_segments(self.lang));
+
+        // Ligne/colonne courante dans le sens de l'avancée automatique de la
+        // frappe (voir `BuilderOrientation`) : c'est cette dimension qui
+        // s'arrête net en fin de grille plutôt que de boucler, donc celle
+        // qui mérite un avertissement à l'approche de la fin.
+        // x/y explicites, 0-indexés — mêmes coordonnées que la grille du
+        // fichier `.course` et que les axes imprimés sur
+        // `tools/hole_design_canvas.pdf` (origine (0,0) en haut à gauche),
+        // pour naviguer directement vers une case repérée sur un plan
+        // dessiné à l'avance plutôt que de deviner sa position à l'écran.
+        let (position_line, remaining) = match self.orientation {
+            BuilderOrientation::Horizontal => {
+                let remaining = self.grid_height - 1 - self.cursor.y;
+                let line = match self.lang {
+                    Lang::En => format!(
+                        "Position: x={} y={}   (row {}/{})",
+                        self.cursor.x,
+                        self.cursor.y,
+                        self.cursor.y + 1,
+                        self.grid_height
+                    ),
+                    Lang::Fr => format!(
+                        "Position : x={} y={}   (ligne {}/{})",
+                        self.cursor.x,
+                        self.cursor.y,
+                        self.cursor.y + 1,
+                        self.grid_height
+                    ),
+                };
+                (line, remaining)
+            }
+            BuilderOrientation::Vertical => {
+                let remaining = self.grid_width - 1 - self.cursor.x;
+                let line = match self.lang {
+                    Lang::En => format!(
+                        "Position: x={} y={}   (column {}/{})",
+                        self.cursor.x,
+                        self.cursor.y,
+                        self.cursor.x + 1,
+                        self.grid_width
+                    ),
+                    Lang::Fr => format!(
+                        "Position : x={} y={}   (colonne {}/{})",
+                        self.cursor.x,
+                        self.cursor.y,
+                        self.cursor.x + 1,
+                        self.grid_width
+                    ),
+                };
+                (line, remaining)
+            }
+        };
+        let position_style = if remaining == 0 {
+            Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD)
+        } else if remaining <= NEAR_END_THRESHOLD {
+            Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let position_line = if remaining == 0 {
+            match self.lang {
+                Lang::En => format!("{position_line} — last one, won't wrap around"),
+                Lang::Fr => format!("{position_line} — dernière, pas de retour au début"),
+            }
+        } else {
+            position_line
+        };
+        write_line(buf, inner, inner.y + 2, &position_line, position_style);
+
+        let fourth_line = if self.quit_confirm {
             match self.lang {
                 Lang::En => "Press q again to quit without saving".to_string(),
                 Lang::Fr => "Appuyez encore sur q pour quitter sans sauvegarder".to_string(),
@@ -190,8 +346,8 @@ impl<'a> Widget for BuilderHeaderView<'a> {
         write_line(
             buf,
             inner,
-            inner.y + 1,
-            &second_line,
+            inner.y + 3,
+            &fourth_line,
             Style::default().fg(Color::DarkGray),
         );
 
@@ -199,7 +355,7 @@ impl<'a> Widget for BuilderHeaderView<'a> {
             write_line(
                 buf,
                 inner,
-                inner.y + 2,
+                inner.y + 4,
                 message,
                 Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD),
             );

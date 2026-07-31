@@ -17,13 +17,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no more forcing every short hole to fill 100x60 by hand. Existing files
   that don't declare a size are completely unaffected.
 - A first version of the in-game hole builder: press `E` from the course
-  menu, pick a par and an orientation (a suggested grid size follows), then
+  menu, pick a par and an orientation (a suggested grid size follows,
+  scaled proportionally so a par 7+ hole gets the full 100x60 canvas), then
   draw the hole entirely from the keyboard — typing a terrain character
-  (`.`/`=`/`B`/`~`/`T`/`G`/`X`/`D`/`H`) paints the current cell and
-  auto-advances to the next one, arrows move freely, `U` undoes the last
-  cell, `N` renames, `S` saves. A saved file is always one the game can
-  already load, since saving validates it the same way loading does. Not
-  yet supported: loading an existing `.course` file to edit or duplicate it
+  (`.`/`=`/`B`/`~`/`T`/`G`/`X`/`D`/`H`, either letter case) paints the
+  current cell and auto-advances to the next one, arrows move freely, `U`
+  undoes the last cell, `N` renames, `S` saves. The header bar shows the
+  terrain legend at all times, each entry colored to match its terrain on
+  the map, plus the cursor's exact (x, y) position — same 0-indexed
+  coordinates as the `.course` grid and the printable PDF canvas, so you
+  can navigate straight to a cell you planned out on paper — and a
+  row/column progress readout that turns yellow, then red, as you approach
+  the last row/column, since auto-advance stops there instead of wrapping
+  around.
+  A saved file is always one the game can already load, since saving
+  validates it the same way loading does. Not yet supported: loading an
+  existing `.course` file to edit or duplicate it
   (coming in a follow-up).
 
 ### Changed

@@ -755,6 +755,14 @@ enum BuilderExit {
 /// une valeur qui n'a pas de sens golfique.
 const MIN_HOLE_PAR: u8 = 3;
 
+/// Résout un caractère tapé dans le builder vers un terrain, insensible à
+/// la casse (`d` comme `D` pour le tee, `t` comme `T` pour l'arbre, etc.) —
+/// seule la saisie interactive est tolérante à la casse ; le format
+/// `.course` lui-même (`TerrainKind::from_char`) reste strict, inchangé.
+fn terrain_from_builder_key(c: char) -> Option<TerrainKind> {
+    TerrainKind::from_char(c.to_ascii_uppercase())
+}
+
 /// Taille de grille suggérée à partir du par visé, cohérente avec les
 /// distances déjà utilisées par `tools/make_hole_canvas.py` (rayons idéaux
 /// tee-green par par) : un par court n'a pas besoin d'un canevas 100x60
@@ -969,7 +977,7 @@ fn run_builder<B: ratatui::backend::Backend>(
         terminal.draw(|frame| {
             let rows = Layout::default()
                 .direction(LayoutDirection::Vertical)
-                .constraints([Constraint::Length(5), Constraint::Min(0)])
+                .constraints([Constraint::Length(7), Constraint::Min(0)])
                 .split(frame.size());
 
             frame.render_widget(
@@ -978,6 +986,9 @@ fn run_builder<B: ratatui::backend::Backend>(
                     name: &state.name,
                     par: state.par,
                     orientation: state.orientation,
+                    cursor: state.cursor,
+                    grid_width: state.width,
+                    grid_height: state.height,
                     mode: state.mode,
                     text_input: &state.text_input,
                     message: state.message.as_deref(),
@@ -1025,7 +1036,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                                 state.mode = BuilderMode::EnteringSavePath;
                             }
                             KeyCode::Char(c) => {
-                                if let Some(terrain) = TerrainKind::from_char(c) {
+                                if let Some(terrain) = terrain_from_builder_key(c) {
                                     state.type_terrain(terrain);
                                 }
                             }
@@ -1412,6 +1423,32 @@ mod tests {
             quick3.holes.iter().map(|h| h.meta.par as u32).sum::<u32>(),
             12
         );
+    }
+
+    #[test]
+    fn terrain_from_builder_key_is_case_insensitive_for_letters() {
+        assert_eq!(terrain_from_builder_key('d'), Some(TerrainKind::Tee));
+        assert_eq!(terrain_from_builder_key('D'), Some(TerrainKind::Tee));
+        assert_eq!(terrain_from_builder_key('t'), Some(TerrainKind::Tree));
+        assert_eq!(terrain_from_builder_key('T'), Some(TerrainKind::Tree));
+        assert_eq!(terrain_from_builder_key('g'), Some(TerrainKind::Green));
+        assert_eq!(terrain_from_builder_key('h'), Some(TerrainKind::Hole));
+        assert_eq!(terrain_from_builder_key('b'), Some(TerrainKind::Bunker));
+        assert_eq!(terrain_from_builder_key('x'), Some(TerrainKind::PenaltyZone));
+    }
+
+    #[test]
+    fn terrain_from_builder_key_still_recognizes_non_letter_symbols() {
+        assert_eq!(terrain_from_builder_key('.'), Some(TerrainKind::Fairway));
+        assert_eq!(terrain_from_builder_key('='), Some(TerrainKind::Rough));
+        assert_eq!(terrain_from_builder_key('~'), Some(TerrainKind::Water));
+        assert_eq!(terrain_from_builder_key(' '), Some(TerrainKind::OutOfBounds));
+    }
+
+    #[test]
+    fn terrain_from_builder_key_rejects_unrecognized_chars() {
+        assert_eq!(terrain_from_builder_key('q'), None);
+        assert_eq!(terrain_from_builder_key('1'), None);
     }
 
     #[test]

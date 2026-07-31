@@ -353,18 +353,40 @@
       3. [x] **Frappe directe = peinture, avec avancée automatique**
          (`BuilderState::type_terrain`/`advance_cursor`, testées) : taper
          un caractère de terrain valide (`.`/`=`/`B`/`~`/`T`/`G`/`X`/`D`/
-         `H`, reconnus par `TerrainKind::from_char`, déjà existant) peint
-         la case sous le curseur et avance automatiquement à la suivante
-         dans le sens choisi à l'étape 2 (ligne par ligne en horizontal,
-         colonne par colonne en vertical — comme du texte avec retour à la
-         ligne). Une touche qui ne correspond à aucun terrain est ignorée
-         (pas d'avancée). Pas de mode "sélectionner un terrain puis
-         peindre" : le caractère tapé *est* le terrain. Le curseur s'arrête
-         net à la dernière case (pas de retour au début) plutôt que de
-         boucler — testé. La répétition clavier native du terminal
+         `H`, résolus par `terrain_from_builder_key` — nouvelle fonction
+         testée qui met le caractère en majuscule avant de le passer à
+         `TerrainKind::from_char`, donc `d`/`D` peignent tous les deux un
+         tee, `t`/`T` un arbre, etc. ; le format `.course` lui-même reste
+         strict sur la casse, seule la saisie interactive du builder est
+         tolérante) peint la case sous le curseur et avance automatiquement
+         à la suivante dans le sens choisi à l'étape 2 (ligne par ligne en
+         horizontal, colonne par colonne en vertical — comme du texte avec
+         retour à la ligne). Une touche qui ne correspond à aucun terrain
+         est ignorée (pas d'avancée). Pas de mode "sélectionner un terrain
+         puis peindre" : le caractère tapé *est* le terrain. Le curseur
+         s'arrête net à la dernière case (pas de retour au début) plutôt
+         que de boucler — testé. La répétition clavier native du terminal
          (maintenir une touche enfoncée) sert de "remplissage rapide"
          gratuit pour les longues lignes de fairway/rough — vérifié en
-         tmux.
+         tmux. Une légende des caractères de terrain (même contenu que sur
+         `tools/hole_design_canvas.pdf`) est affichée en permanence dans le
+         bandeau d'en-tête (`terrain_legend_segments()` dans
+         `tui/builder.rs`), chaque entrée reprenant la couleur exacte que ce
+         terrain affiche sur la carte (`terrain_style()` dans `render.rs`,
+         nouveau `write_spans()` pour un rendu à styles multiples sur une
+         même ligne) plutôt qu'une seule couleur uniforme, pour ne pas avoir
+         à s'en souvenir par cœur. Un indicateur de position
+         ("Position: x=.. y=.."), coordonnées 0-indexées identiques à
+         celles de la grille du fichier `.course` et des axes imprimés sur
+         `tools/hole_design_canvas.pdf` (origine (0,0) en haut à gauche) —
+         pour naviguer directement vers une case repérée sur un plan
+         dessiné à l'avance. Accompagné du rappel de ligne/colonne courante
+         dans le sens de l'avancée automatique ("row N/total" ou "column
+         N/total"), coloré en jaune à l'approche des 3 dernières et en
+         rouge sur la toute dernière (avec un rappel explicite
+         "won't wrap around") —
+         pour repérer à l'avance qu'on va bientôt buter sur le bord de la
+         grille plutôt que de le découvrir en tapant dans le vide.
       4. [x] **Flèches** (`BuilderState::move_cursor`, testée, clampée aux
          bords de la grille) : déplacement libre du curseur, indépendant
          de l'avancée automatique.

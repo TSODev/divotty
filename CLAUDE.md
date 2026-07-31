@@ -264,16 +264,27 @@ Fait et testé :
   (`BuilderState::to_course_raw`) et valide via `Hole::parse` avant
   d'écrire sur disque — un fichier produit par le builder est donc
   toujours un fichier que le jeu sait déjà charger, vérifié en tmux
-  (trou créé, sauvegardé, rechargé et joué de bout en bout). Ne charge pas
-  encore un fichier existant pour modification/duplication (reste à
-  faire, phase 9).
+  (trou créé, sauvegardé, rechargé et joué de bout en bout). La frappe est
+  insensible à la casse (`terrain_from_builder_key`, testée — `d` comme
+  `D`, `t` comme `T`, etc. ; seul le format `.course` lui-même reste
+  strict), et le bandeau d'en-tête affiche en permanence la légende des
+  caractères de terrain — chaque entrée colorée avec la couleur exacte de
+  ce terrain sur la carte (même source, `terrain_style()` dans
+  `render.rs`) — ainsi qu'un indicateur de position ("Position: x=.. y=..",
+  coordonnées 0-indexées identiques à celles de la grille du fichier
+  `.course` et des axes du canevas PDF, pour naviguer directement vers une
+  case repérée sur un plan dessiné à l'avance) accompagné du rappel de
+  ligne/colonne courante dans le sens de l'avancée automatique, qui se
+  colore en avertissement à l'approche de la dernière ligne/colonne, là où
+  l'avancée automatique s'arrête net. Ne charge pas encore un fichier
+  existant pour modification/duplication (reste à faire, phase 9).
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 28 tests unitaires dans
-  `src/main.rs` (69 au total avec `core`), mais rien qui simule un vrai
+  `adjust_die_strength`...) a maintenant 31 tests unitaires dans
+  `src/main.rs` (72 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io
