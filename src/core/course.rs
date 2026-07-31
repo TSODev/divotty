@@ -19,6 +19,17 @@ pub struct HoleMeta {
     pub par: u8,
     #[serde(default)]
     pub description: Option<String>,
+    /// Dimensions de la grille ASCII déclarée dans ce fichier, si le trou
+    /// n'utilise pas le canevas 100x60 complet. `None` (valeur par défaut,
+    /// absente du frontmatter) signifie "grille 100x60 pleine" — tous les
+    /// fichiers `.course` existants restent donc valides sans modification.
+    /// La petite grille est centrée dans le canevas complet une fois parsée
+    /// (voir `Hole::parse`), donc `shot.rs`/`render.rs` ne voient jamais que
+    /// des `Hole` toujours 100x60.
+    #[serde(default)]
+    pub width: Option<usize>,
+    #[serde(default)]
+    pub height: Option<usize>,
 }
 
 /// Un trou complet : métadonnées + grille de terrain.
@@ -57,6 +68,19 @@ pub enum CourseError {
         line: usize,
         actual_w: usize,
     },
+    #[error("grille invalide: attendu {expected_h} lignes, {actual_h} trouvées")]
+    BadRowCount { expected_h: usize, actual_h: usize },
+    #[error(
+        "taille déclarée invalide pour le trou '{name}': {width}x{height} dépasse le \
+         format maximal {max_w}x{max_h}"
+    )]
+    DeclaredSizeTooLarge {
+        name: String,
+        width: usize,
+        height: usize,
+        max_w: usize,
+        max_h: usize,
+    },
     #[error("caractère de terrain inconnu '{0}' à la ligne {1}, colonne {2}")]
     UnknownTerrainChar(char, usize, usize),
     #[error("aucune case de départ (D) trouvée sur le trou '{0}'")]
@@ -86,9 +110,21 @@ impl Hole {
 
         let meta: HoleMeta = serde_yaml::from_str(meta_str.trim())?;
 
-        let mut tiles = Vec::with_capacity(COURSE_HEIGHT);
-        let mut tee = None;
-        let mut hole_pos = None;
+        let declared_w = meta.width.unwrap_or(COURSE_WIDTH);
+        let declared_h = meta.height.unwrap_or(COURSE_HEIGHT);
+        if declared_w > COURSE_WIDTH || declared_h > COURSE_HEIGHT {
+            return Err(CourseError::DeclaredSizeTooLarge {
+                name: meta.name.clone(),
+                width: declared_w,
+                height: declared_h,
+                max_w: COURSE_WIDTH,
+                max_h: COURSE_HEIGHT,
+            });
+        }
+
+        let mut local_tiles = Vec::with_capacity(declared_h);
+        let mut local_tee = None;
+        let mut local_hole_pos = None;
 
         let lines: Vec<&str> = grid_str
             .lines()
@@ -96,41 +132,72 @@ impl Hole {
             .filter(|l| !l.is_empty())
             .collect();
 
+        if lines.len() != declared_h {
+            return Err(CourseError::BadRowCount {
+                expected_h: declared_h,
+                actual_h: lines.len(),
+            });
+        }
+
         for (y, line) in lines.iter().enumerate() {
-            if line.chars().count() != COURSE_WIDTH {
+            if line.chars().count() != declared_w {
                 return Err(CourseError::BadDimensions {
-                    expected_w: COURSE_WIDTH,
-                    expected_h: COURSE_HEIGHT,
+                    expected_w: declared_w,
+                    expected_h: declared_h,
                     line: y,
                     actual_w: line.chars().count(),
                 });
             }
-            let mut row = Vec::with_capacity(COURSE_WIDTH);
+            let mut row = Vec::with_capacity(declared_w);
             for (x, c) in line.chars().enumerate() {
                 let terrain = TerrainKind::from_char(c)
                     .ok_or(CourseError::UnknownTerrainChar(c, y, x))?;
                 match terrain {
                     TerrainKind::Tee => {
-                        if tee.is_some() {
+                        if local_tee.is_some() {
                             return Err(CourseError::MultipleTee(meta.name.clone()));
                         }
-                        tee = Some(Pos { x, y });
+                        local_tee = Some(Pos { x, y });
                     }
                     TerrainKind::Hole => {
-                        if hole_pos.is_some() {
+                        if local_hole_pos.is_some() {
                             return Err(CourseError::MultipleHole(meta.name.clone()));
                         }
-                        hole_pos = Some(Pos { x, y });
+                        local_hole_pos = Some(Pos { x, y });
                     }
                     _ => {}
                 }
                 row.push(terrain);
             }
-            tiles.push(row);
+            local_tiles.push(row);
         }
 
-        let tee = tee.ok_or_else(|| CourseError::NoTee(meta.name.clone()))?;
-        let hole_pos = hole_pos.ok_or_else(|| CourseError::NoHole(meta.name.clone()))?;
+        let local_tee = local_tee.ok_or_else(|| CourseError::NoTee(meta.name.clone()))?;
+        let local_hole_pos = local_hole_pos.ok_or_else(|| CourseError::NoHole(meta.name.clone()))?;
+
+        // Centre la petite grille dans le canevas 100x60 complet, entouré de
+        // hors-limites — le reste du moteur (shot.rs, render.rs, Viewport) ne
+        // voit donc jamais qu'un `Hole` toujours 100x60, quelle que soit la
+        // taille déclarée. Le reste éventuel d'une différence impaire va en
+        // bas/à droite plutôt qu'en haut/à gauche (détail cosmétique, sans
+        // conséquence sur le jeu).
+        let offset_x = (COURSE_WIDTH - declared_w) / 2;
+        let offset_y = (COURSE_HEIGHT - declared_h) / 2;
+
+        let mut tiles = vec![vec![TerrainKind::OutOfBounds; COURSE_WIDTH]; COURSE_HEIGHT];
+        for (y, row) in local_tiles.into_iter().enumerate() {
+            for (x, terrain) in row.into_iter().enumerate() {
+                tiles[offset_y + y][offset_x + x] = terrain;
+            }
+        }
+        let tee = Pos {
+            x: local_tee.x + offset_x,
+            y: local_tee.y + offset_y,
+        };
+        let hole_pos = Pos {
+            x: local_hole_pos.x + offset_x,
+            y: local_hole_pos.y + offset_y,
+        };
 
         Ok(Hole {
             meta,
@@ -357,5 +424,76 @@ mod tests {
         raw = raw.replacen(&sample_grid_line('.'), &sample_grid_line('.')[..COURSE_WIDTH - 1], 1);
         let err = Hole::parse(&raw).unwrap_err();
         assert!(matches!(err, CourseError::BadDimensions { .. }));
+    }
+
+    fn build_small_raw(width: usize, height: usize) -> String {
+        let mut lines = Vec::with_capacity(height);
+        for y in 0..height {
+            let mut line: Vec<char> = std::iter::repeat('.').take(width).collect();
+            if y == 0 {
+                line[0] = 'D';
+            }
+            if y == height - 1 {
+                line[width - 1] = 'H';
+            }
+            lines.push(line.into_iter().collect::<String>());
+        }
+        format!(
+            "name: \"Petit trou\"\npar: 3\nwidth: {}\nheight: {}\n---\n{}\n",
+            width,
+            height,
+            lines.join("\n")
+        )
+    }
+
+    #[test]
+    fn small_hole_is_centered_in_the_full_canvas() {
+        let raw = build_small_raw(20, 10);
+        let hole = Hole::parse(&raw).expect("un petit trou déclaré doit parser");
+
+        let offset_x = (COURSE_WIDTH - 20) / 2;
+        let offset_y = (COURSE_HEIGHT - 10) / 2;
+        assert_eq!(hole.tee, Pos { x: offset_x, y: offset_y });
+        assert_eq!(
+            hole.hole_pos,
+            Pos { x: offset_x + 19, y: offset_y + 9 }
+        );
+        // Le canevas final reste toujours 100x60, peu importe la taille déclarée.
+        assert_eq!(hole.tiles.len(), COURSE_HEIGHT);
+        assert_eq!(hole.tiles[0].len(), COURSE_WIDTH);
+        // Une case hors de la petite grille est bien du hors-limites.
+        assert_eq!(hole.terrain_at(Pos { x: 0, y: 0 }), Some(TerrainKind::OutOfBounds));
+    }
+
+    #[test]
+    fn rejects_declared_size_larger_than_the_canvas() {
+        let raw = build_small_raw(COURSE_WIDTH + 1, 10);
+        let err = Hole::parse(&raw).unwrap_err();
+        assert!(matches!(err, CourseError::DeclaredSizeTooLarge { .. }));
+    }
+
+    #[test]
+    fn rejects_row_count_mismatching_the_declared_height() {
+        let mut raw = build_small_raw(20, 10);
+        // Retire la dernière ligne de la grille sans toucher au frontmatter,
+        // pour que le nombre de lignes ne corresponde plus à `height: 10`.
+        if let Some(idx) = raw.rfind('\n') {
+            raw.truncate(idx);
+        }
+        if let Some(idx) = raw.rfind('\n') {
+            raw.truncate(idx);
+        }
+        let err = Hole::parse(&raw).unwrap_err();
+        assert!(matches!(err, CourseError::BadRowCount { .. }));
+    }
+
+    #[test]
+    fn full_size_hole_without_declared_dimensions_is_unaffected() {
+        // Non-régression : un fichier 100x60 sans `width`/`height` continue
+        // de parser à l'identique (tee/trou non translatés).
+        let raw = build_valid_raw();
+        let hole = Hole::parse(&raw).expect("le trou plein format doit parser");
+        assert_eq!(hole.tee, Pos { x: 0, y: 0 });
+        assert_eq!(hole.hole_pos, Pos { x: COURSE_WIDTH - 1, y: COURSE_HEIGHT - 1 });
     }
 }

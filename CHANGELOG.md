@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Once you hole out, the map replaces the (now pointless) aim preview with
   a recap of the whole hole: a red ball at each intermediate stop and a
   trail of yellow balls connecting them, from tee to cup.
+- `.course` files can now declare a smaller grid than the full 100x60
+  canvas (`width`/`height` in the hole's frontmatter). The declared grid is
+  centered automatically in the full canvas, surrounded by out-of-bounds —
+  no more forcing every short hole to fill 100x60 by hand. Existing files
+  that don't declare a size are completely unaffected.
 
 ### Changed
 - Putting is less of a coin flip now: the Putter's accuracy improves the
@@ -54,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The ball marker disappeared after every shot when zoom was off — a
   regression from the change above, which had moved where the marker gets
   drawn into a branch that only ran while zoomed.
+- A `.course` file's row count is now actually checked against its
+  expected height while parsing. Previously only each row's width was
+  validated, so a hole file with too few or too many grid lines could
+  parse without error.
 
 ## [0.2.0] - 2026-07-31
 

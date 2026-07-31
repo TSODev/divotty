@@ -244,32 +244,28 @@
       seul style ; la grille 100x60 (voir v0.1) et le `Viewport` s'adaptent
       déjà aux deux sans changement de code, c'est un choix de dessin par
       trou (voir `CLAUDE.md`, principes de conception)
-- [ ] Format `.course` à taille variable par trou, centrée dans le canevas
+- [x] Format `.course` à taille variable par trou, centrée dans le canevas
       100x60 (au lieu de forcer chaque trou, même un par 3, à remplir
       entièrement 100x60 de hors-limites). Isolé entièrement dans le
-      parsing, aucun changement pour le moteur de résolution, le rendu, ou
-      le `Viewport`, qui continuent de voir un `Hole` toujours 100x60.
-      **Plan** :
-      1. Ajouter `width: Option<usize>` / `height: Option<usize>` à
-         `HoleMeta` (`src/core/course.rs`), `#[serde(default)]` → `None`
-         signifie "100x60 complet", rétro-compatible avec les fichiers
-         existants qui ne déclarent rien.
-      2. `Hole::parse` : valider la grille ASCII contre la taille déclarée
-         (`declared_w`/`declared_h`, par défaut `COURSE_WIDTH`/
-         `COURSE_HEIGHT`) au lieu des constantes globales directement —
-         garde le filet de sécurité actuel contre les erreurs de saisie
-         (mismatch = erreur, comme aujourd'hui).
-      3. Nouvelle variante d'erreur `CourseError::DeclaredSizeTooLarge` si
-         `width`/`height` déclarés dépassent 100x60.
-      4. Une fois la petite grille parsée : calculer l'offset de centrage
-         (`(100-width)/2`, `(60-height)/2`), construire la grille finale
-         100x60 remplie de hors-limites, y copier la petite grille à
-         l'offset, et **translater** les positions `tee`/`hole_pos`
-         trouvées de ce même offset.
-      5. Tests : un trou en petit format se centre correctement (tee/trou
-         translatés) ; une taille déclarée trop grande est rejetée ; un
-         fichier 100x60 sans `width`/`height` continue de parser à
-         l'identique (non-régression).
+      parsing (`Hole::parse`, `src/core/course.rs`) : `HoleMeta` porte
+      désormais `width: Option<usize>` / `height: Option<usize>`
+      (`#[serde(default)]`, `None` = 100x60 complet, rétro-compatible avec
+      tous les fichiers existants). La grille ASCII est validée contre la
+      taille déclarée (largeur *et* nombre de lignes — ce dernier n'était
+      pas explicitement vérifié avant, corrigé au passage), rejetée si elle
+      dépasse 100x60 (`CourseError::DeclaredSizeTooLarge`) ou si le nombre
+      de lignes ne correspond pas à `height` (`CourseError::BadRowCount`).
+      Une fois la petite grille parsée, elle est centrée dans une grille
+      100x60 pleine de hors-limites (offset `(100-width)/2, (60-height)/2`,
+      arrondi par défaut — le reste d'une différence impaire va en bas/à
+      droite) et les positions `tee`/`hole_pos` sont translatées du même
+      offset. Le moteur de résolution, le rendu et le `Viewport` n'ont eu
+      aucun changement à faire : ils ne voient toujours qu'un `Hole` déjà
+      100x60. Testé (petit trou centré correctement, taille trop grande
+      rejetée, nombre de lignes incohérent rejeté, non-régression sur un
+      fichier 100x60 sans `width`/`height` déclarés) et vérifié
+      visuellement (trou 20x12 joué en tmux : tee/trou/trajectoire/coup
+      tous corrects, hors-limites tout autour).
 - [ ] Builder de trous : éditeur visuel intégré au TUI plutôt qu'un
       assistant CLI séparé — le vrai point de friction est de dessiner la
       grille à l'aveugle dans un éditeur de texte, pas de taper 3 lignes de

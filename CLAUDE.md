@@ -59,7 +59,9 @@ seule règle de zone basse (pas une simulation d'arc de trajectoire).
   d'une migration des fichiers existants dans `courses/`. La difficulté
   (1-4 étoiles) vit dans `course.yaml` (niveau parcours), pas dans le
   frontmatter des fichiers `.course` de trou (niveau trou) — elle n'est liée
-  qu'au parcours.
+  qu'au parcours. Exemple de champ ajouté sans casser l'existant : `width`/
+  `height` optionnels dans le frontmatter d'un trou (voir plus bas, "taille
+  variable par trou") — absents, le trou reste 100x60 plein comme avant.
 - **Grille 100x60 vs terminal** : la carte est presque toujours plus grande
   que le terminal visible. Le rendu passe systématiquement par un `Viewport`
   qui centre sur la balle (`src/tui/render.rs`) — ne pas tenter d'afficher
@@ -239,13 +241,25 @@ Fait et testé :
   vides du panneau Contrôles, pour que l'accent forme une "colonne"
   visible sur toute la hauteur du panneau. Le panneau Titre n'a plus de
   libellé de bordure ("Divotty"), juste l'icône + version à l'intérieur.
+- Format `.course` à taille variable par trou : `HoleMeta.width`/`height`
+  (optionnels, `#[serde(default)]`) déclarent une grille plus petite que
+  100x60, centrée automatiquement dans le canevas complet à l'issue du
+  parsing (`Hole::parse` dans `src/core/course.rs`) — le reste est rempli
+  de hors-limites, et `tee`/`hole_pos` sont translatés du même offset.
+  Sans ces champs, comportement inchangé (100x60 plein). Le moteur de
+  résolution, le rendu et le `Viewport` ne voient donc jamais qu'un `Hole`
+  déjà 100x60 — aucun changement requis en dehors du parsing. Au passage,
+  le nombre de lignes de la grille est désormais explicitement validé
+  contre la hauteur attendue (`CourseError::BadRowCount`) — ce n'était pas
+  le cas avant, un trou avec trop/pas assez de lignes aurait pu parser
+  silencieusement avec la mauvaise hauteur.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
   `adjust_die_strength`...) a maintenant 17 tests unitaires dans
-  `src/main.rs` (51 au total avec `core`), mais rien qui simule un vrai
+  `src/main.rs` (55 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io
