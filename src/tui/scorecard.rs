@@ -24,6 +24,11 @@ pub struct ScorecardView<'a> {
     pub quit_confirm: bool,
 }
 
+/// Marge intérieure (colonnes/lignes) entre la bordure du panneau et son
+/// contenu — sans ça, le texte touchait directement le cadre.
+const H_PADDING: u16 = 2;
+const V_PADDING: u16 = 1;
+
 fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
     if y >= area.y + area.height {
         return;
@@ -46,13 +51,20 @@ impl<'a> Widget for ScorecardView<'a> {
         let inner = block.inner(area);
         block.render(area, buf);
 
+        let padded = Rect {
+            x: inner.x + H_PADDING,
+            y: inner.y + V_PADDING,
+            width: inner.width.saturating_sub(H_PADDING * 2),
+            height: inner.height.saturating_sub(V_PADDING * 2),
+        };
+
         let header = match self.lang {
             Lang::En => format!("{}  ·  {} holes", stars(self.course_difficulty), self.entries.len()),
             Lang::Fr => format!("{}  ·  {} trous", stars(self.course_difficulty), self.entries.len()),
         };
-        write_line(buf, inner, inner.y, &header, Style::default().fg(Color::White));
+        write_line(buf, padded, padded.y, &header, Style::default().fg(Color::White));
 
-        let mut y = inner.y + 2;
+        let mut y = padded.y + 2;
         let mut total_strokes: u32 = 0;
         let mut total_par: u32 = 0;
         for (i, (name, score)) in self.entries.iter().enumerate() {
@@ -66,7 +78,7 @@ impl<'a> Widget for ScorecardView<'a> {
                 score_label_text(label, self.lang),
                 format_relative(score.relative_to_par() as i32)
             );
-            write_line(buf, inner, y, &line, Style::default().fg(score_color(label)));
+            write_line(buf, padded, y, &line, Style::default().fg(score_color(label)));
             total_strokes += score.strokes as u32;
             total_par += score.par as u32;
             y += 1;
@@ -88,7 +100,7 @@ impl<'a> Widget for ScorecardView<'a> {
                 format_relative(total_relative)
             ),
         };
-        write_line(buf, inner, y, &total_label, Style::default().add_modifier(ratatui::style::Modifier::BOLD));
+        write_line(buf, padded, y, &total_label, Style::default().add_modifier(ratatui::style::Modifier::BOLD));
 
         let hint = if self.quit_confirm {
             match self.lang {
@@ -101,7 +113,7 @@ impl<'a> Widget for ScorecardView<'a> {
                 Lang::Fr => "Entrée / M  retour au menu   L  langue   qq  quitter",
             }
         };
-        let hint_y = inner.y + inner.height.saturating_sub(1);
-        write_line(buf, inner, hint_y, hint, Style::default().fg(Color::DarkGray));
+        let hint_y = padded.y + padded.height.saturating_sub(1);
+        write_line(buf, padded, hint_y, hint, Style::default().fg(Color::DarkGray));
     }
 }

@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   further: each is a small 3-dot segment oriented with the shot (horizontal,
   vertical, or diagonal), lining up edge-to-edge with the next cell's
   segment so the trajectory reads as one continuous line.
+- The end-of-round scorecard screen now has some breathing room instead of
+  text touching the border directly.
 
 ### Fixed
 - The ball marker disappeared after every shot when zoom was off — a
