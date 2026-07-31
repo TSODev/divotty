@@ -414,13 +414,18 @@
          `D`/`H`, doublon...), affiche le message d'erreur dans le bandeau
          au lieu d'écrire le fichier (chemin de destination demandé en
          saisie libre, ex. `courses/mon_trou.course`). `qq` quitte
-         *l'application entière* (cohérent avec le reste de l'appli),
-         avec confirmation double affichant "quitter sans sauvegarder".
-         `Échap` revient au menu immédiatement sans cette confirmation —
-         différence assumée pour l'instant (raccourci "annuler et sortir"
-         rapide), mais sans le même garde-fou que `qq` ; à revoir si des
-         pertes accidentelles de dessin en cours s'avèrent gênantes en
-         pratique.
+         *l'application entière* (cohérent avec le reste de l'appli), avec
+         confirmation double affichant "quitter sans sauvegarder". `Échap`
+         revient au menu (pas l'application entière), avec sa propre
+         confirmation double (`BuilderState::exit_confirm`, distincte de
+         `quit_confirm`) — signalé après un premier passage sans garde-fou
+         du tout, corrigé depuis : un deuxième `Échap` confirme l'abandon,
+         mais n'importe quelle autre touche annule, y compris `S` qui
+         bascule normalement vers la sauvegarde (aucune logique dédiée
+         nécessaire : la frappe `S` habituelle prend le relai et la
+         confirmation se réinitialise au passage) — permet donc de
+         sauvegarder le travail en cours avant de sortir plutôt que de
+         perdre le dessin.
       9. **Charger un fichier existant** : petit sélecteur parcourant
          `courses/**/*.course` (même esprit que `Course::discover`, mais
          fichier par fichier), au choix "Modifier" (réécrit le même

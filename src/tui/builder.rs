@@ -215,6 +215,9 @@ pub struct BuilderHeaderView<'a> {
     pub text_input: &'a str,
     pub message: Option<&'a str>,
     pub quit_confirm: bool,
+    /// Deuxième pression sur `Échap` en attente (retour au menu) — distinct
+    /// de `quit_confirm` (quitter l'application entière via `qq`).
+    pub exit_confirm: bool,
 }
 
 impl<'a> Widget for BuilderHeaderView<'a> {
@@ -318,18 +321,29 @@ impl<'a> Widget for BuilderHeaderView<'a> {
                 Lang::En => "Press q again to quit without saving".to_string(),
                 Lang::Fr => "Appuyez encore sur q pour quitter sans sauvegarder".to_string(),
             }
+        } else if self.exit_confirm {
+            match self.lang {
+                Lang::En => {
+                    "Press Esc again to discard and return to menu (S to save first)".to_string()
+                }
+                Lang::Fr => {
+                    "Appuyez encore sur Échap pour abandonner et revenir au menu \
+                     (S pour sauvegarder d'abord)"
+                        .to_string()
+                }
+            }
         } else {
             match self.mode {
                 BuilderMode::Drawing => match self.lang {
                     Lang::En => {
                         "Type a terrain char to paint & advance   arrows: move   \
-                         U: undo   N: rename   S: save   Esc: menu   qq: quit"
+                         U: undo   N: rename   S: save   Esc Esc: menu   qq: quit"
                             .to_string()
                     }
                     Lang::Fr => {
                         "Tapez un caractère de terrain pour peindre et avancer   \
                          flèches : déplacer   U : annuler   N : renommer   \
-                         S : sauvegarder   Échap : menu   qq : quitter"
+                         S : sauvegarder   Échap Échap : menu   qq : quitter"
                             .to_string()
                     }
                 },

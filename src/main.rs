@@ -820,6 +820,13 @@ struct BuilderState {
     message: Option<String>,
     lang: Lang,
     quit_confirm: bool,
+    /// Deuxième pression sur `Échap` en attente (retour au menu, distinct de
+    /// `quit_confirm` qui quitte l'application entière) — annulée par
+    /// n'importe quelle autre touche, y compris `S` qui bascule plutôt vers
+    /// la sauvegarde (permet de sauvegarder le travail en cours avant de
+    /// sortir, sans logique dédiée : la frappe `S` habituelle prend le relai
+    /// normalement et cette confirmation se réinitialise au passage).
+    exit_confirm: bool,
 }
 
 impl BuilderState {
@@ -843,6 +850,7 @@ impl BuilderState {
             message: None,
             lang,
             quit_confirm: false,
+            exit_confirm: false,
         }
     }
 
@@ -993,6 +1001,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                     text_input: &state.text_input,
                     message: state.message.as_deref(),
                     quit_confirm: state.quit_confirm,
+                    exit_confirm: state.exit_confirm,
                 },
                 rows[0],
             );
@@ -1019,9 +1028,17 @@ fn run_builder<B: ratatui::backend::Backend>(
                                     return Ok(BuilderExit::Quit);
                                 }
                                 state.quit_confirm = true;
+                                state.exit_confirm = false;
                                 continue;
                             }
-                            KeyCode::Esc => return Ok(BuilderExit::BackToMenu),
+                            KeyCode::Esc => {
+                                if state.exit_confirm {
+                                    return Ok(BuilderExit::BackToMenu);
+                                }
+                                state.exit_confirm = true;
+                                state.quit_confirm = false;
+                                continue;
+                            }
                             KeyCode::Up => state.move_cursor(0, -1),
                             KeyCode::Down => state.move_cursor(0, 1),
                             KeyCode::Left => state.move_cursor(-1, 0),
@@ -1043,6 +1060,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                             _ => {}
                         }
                         state.quit_confirm = false;
+                        state.exit_confirm = false;
                     }
                     BuilderMode::EditingName => match key.code {
                         KeyCode::Enter => {

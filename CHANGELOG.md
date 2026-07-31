@@ -29,7 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   can navigate straight to a cell you planned out on paper — and a
   row/column progress readout that turns yellow, then red, as you approach
   the last row/column, since auto-advance stops there instead of wrapping
-  around.
+  around. Leaving with `Esc` now asks for confirmation just like `qq`
+  does, and any key other than a second `Esc` cancels it — including `S`,
+  which switches to saving instead, so you can save your work before
+  leaving rather than losing it.
   A saved file is always one the game can already load, since saving
   validates it the same way loading does. Not yet supported: loading an
   existing `.course` file to edit or duplicate it

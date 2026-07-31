@@ -276,7 +276,12 @@ Fait et testé :
   case repérée sur un plan dessiné à l'avance) accompagné du rappel de
   ligne/colonne courante dans le sens de l'avancée automatique, qui se
   colore en avertissement à l'approche de la dernière ligne/colonne, là où
-  l'avancée automatique s'arrête net. Ne charge pas encore un fichier
+  l'avancée automatique s'arrête net. `Échap` (retour au menu) a sa propre
+  confirmation double, distincte de `qq` (quitter l'application entière) —
+  `BuilderState::exit_confirm` — et n'importe quelle touche autre qu'un
+  deuxième `Échap` annule, y compris `S` qui bascule normalement vers la
+  sauvegarde (permet donc de sauvegarder le travail en cours avant de
+  sortir, sans logique dédiée). Ne charge pas encore un fichier
   existant pour modification/duplication (reste à faire, phase 9).
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
