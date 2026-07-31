@@ -453,6 +453,26 @@
          que le trou n'est pas encore inclus dans un parcours, sans faire
          sortir automatiquement du builder (comme les messages d'erreur)
          pour laisser le temps de le lire.
+         **Nom du trou ↔ nom de fichier** : `BuilderState::new` part
+         désormais d'un nom vide (plutôt que le générique "New hole"), le
+         panneau Hole affichant "(unnamed)"/"(sans nom)" tant qu'il n'a pas
+         été renseigné (`N`). Signalé comme manquant : la saisie du nom de
+         fichier (`S`) se pré-remplissait toujours vide, sans lien avec ce
+         nom, et affichait juste un curseur nu sans libellé indiquant ce
+         qui était demandé — corrigé sur les deux points. La saisie du nom
+         de fichier se pré-remplit désormais avec le nom du trou s'il y en
+         a un (évite de le retaper) ; à l'inverse, si le trou n'a pas de
+         nom au moment de sauvegarder, le nom de fichier tel que tapé
+         (avant nettoyage, donc avec espaces/majuscules conservés) est
+         transféré comme nom du trou — pour ne jamais laisser un `name:`
+         vide dans le fichier produit. Un libellé ("File name:"/"Nom de
+         fichier :", "New name:"/"Nouveau nom :") précède maintenant le
+         curseur de saisie dans le panneau Contrôles, pour les deux modes
+         de saisie de texte (renommage et nom de fichier).
+         Une estimation de difficulté par trou a aussi été proposée puis
+         explicitement écartée : la difficulté reste un concept de
+         parcours, pas de trou (voir `CLAUDE.md`, principe déjà en place),
+         confirmé après discussion plutôt que d'y revenir pour le builder.
       9. [x] **Charger un fichier existant** : depuis le menu, `E` ouvre
          désormais un sélecteur (`pick_hole_to_build`, `tui::
          HolePickerView`) plutôt que d'aller directement à l'en-tête d'un
@@ -513,16 +533,56 @@
          unique panneau plein écran, incohérent avec le reste du flux à
          deux colonnes) — signalé, corrigé sur les deux points à la fois :
          (1) la légende revient dans la sidebar de dessin, sous forme d'un
-         panneau dédié "Legend" (`terrain_legend_lines`, deux entrées par
-         ligne pour tenir dans les ~24 caractères utiles d'une colonne
-         étroite, contre ~110 pour la légende complète sur une seule
-         ligne) ; (2) l'écran d'en-tête (`BuilderSetupView`) devient lui
+         panneau dédié "Legend" (`terrain_legend_lines`, une entrée par
+         ligne — deux par ligne d'abord essayé, signalé moins lisible,
+         corrigé — contre ~110 caractères pour la légende complète sur une
+         seule ligne) ; (2) l'écran d'en-tête (`BuilderSetupView`) devient lui
          aussi deux colonnes — formulaire (par/orientation/taille
          suggérée/contrôles) à gauche, aperçu de la grille vierge à la
          taille suggérée à droite (même `BuilderView` réutilisé en lecture
          seule que pour l'aperçu du sélecteur) — cohérent avec les deux
          autres écrans du builder plutôt qu'un panneau isolé au milieu du
-         flux.
+         flux. Le libellé "OOB" remplacé par "out of bounds"/"hors-limites"
+         en toutes lettres, et la touche espace affichée "Space"/"Espace"
+         plutôt que "(space)" entre parenthèses, une fois qu'une ligne
+         entière était disponible par entrée (signalé comme peu clair sous
+         l'ancien format à deux entrées par ligne).
+
+         **Bug de coloration trouvé en vérifiant la légende** (jamais
+         publié) : `prefix_line()` (`sidebar.rs`) perdait silencieusement
+         la couleur posée par `Line::styled(texte, style)` — ce style vit
+         sur le champ `line.style`, pas sur les spans, et `prefix_line`
+         reconstruisait la ligne via `Line::from(spans)` sans le
+         reporter, repartant d'un style par défaut. Résultat : chaque
+         ligne de *tous* les panneaux (jeu compris, pas seulement le
+         builder) retombait sur la couleur d'accent du panneau plutôt que
+         sa couleur voulue — invisible en `capture-pane` sans `-e` (pas de
+         couleurs), donc passé inaperçu jusque-là. Corrigé en chaînant
+         `.style(line.style)` après `Line::from(spans)`.
+
+         **Ligne d'aide tronquée dans le sélecteur** : la ligne d'aide en
+         bas de `HolePickerView` (~60-70 caractères, ex. "↑ ↓ select
+         Enter choose L language Esc back to menu") était coupée net dans
+         la colonne étroite du sélecteur — signalé, corrigé en l'éclatant
+         en plusieurs lignes verticales (une par touche/action, alignées
+         en bas comme les autres panneaux d'aide du builder), pour la
+         liste normale comme pour la confirmation "Modifier ou
+         Dupliquer ?". Réutilise `wrap_text` (déjà utilisée par
+         `BuilderSidebarView`) pour le nom de fichier si jamais trop long.
+
+         **Défilement de la liste** : signalé comme manquant — une
+         bibliothèque plus grande que l'espace disponible dépassait
+         silencieusement en bas du panneau (entrées hors champ jamais
+         dessinées, ni indication ni moyen d'y accéder, et la sélection
+         courante pouvait sortir de l'écran sans qu'on s'en rende compte).
+         Corrigé avec `list_scroll_offset` (testée) : fenêtre défilante
+         recalculée à chaque rendu à partir de la seule sélection courante
+         (pas d'état persistant nécessaire) — reste à `0` tant que la
+         sélection tient dans les lignes visibles, avance juste assez pour
+         la révéler sinon, sans jamais dépasser la dernière page pleine
+         (pas de zone vide en bas une fois tout défilé). Vérifié en tmux
+         avec 35 entrées dans un terminal de 20 lignes : défilement fluide
+         du haut au bas de la liste, aperçu à jour à chaque case.
       10. *(Plus tard, hors scope v1)* Estimation des longueurs de coup
           pendant l'édition, en réutilisant `core::preview_shot` depuis la
           position du curseur — utile pour doser bunkers/rough/eau, mais

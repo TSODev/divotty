@@ -248,10 +248,20 @@ fn shot_message(shot: &ShotResult, strokes: u8, lang: Lang) -> String {
 /// Insère une amorce colorée (dans la couleur d'accent du panneau) entre la
 /// bordure gauche et le texte de la ligne, plutôt que le texte collé
 /// directement contre le cadre.
+///
+/// Doit impérativement conserver `line.style` : `Line::styled(text, style)`
+/// place la couleur voulue sur ce champ `style` de la ligne, pas sur ses
+/// `spans` (qui restent de simples `Span::raw`, sans couleur propre) —
+/// reconstruire une ligne juste à partir de `line.spans` (ex. via
+/// `Line::from(spans)`, qui repart d'un `style` par défaut) perdrait donc
+/// silencieusement toute couleur posée avec `Line::styled`, et chaque ligne
+/// retomberait sur la couleur d'accent du bloc englobant — bug réel,
+/// repéré après signalement (toutes les lignes d'un panneau affichaient sa
+/// couleur d'accent au lieu de leur propre couleur voulue).
 pub(crate) fn prefix_line(line: Line<'static>, accent: Color) -> Line<'static> {
     let mut spans = vec![Span::styled("▏ ", Style::default().fg(accent))];
     spans.extend(line.spans);
-    Line::from(spans)
+    Line::from(spans).style(line.style)
 }
 
 /// Panneau à bordures arrondies avec une couleur d'accent (bordure + titre)

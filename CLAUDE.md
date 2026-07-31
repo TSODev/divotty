@@ -252,6 +252,30 @@ Fait et testé :
   vides du panneau Contrôles, pour que l'accent forme une "colonne"
   visible sur toute la hauteur du panneau. Le panneau Titre n'a plus de
   libellé de bordure ("Divotty"), juste l'icône + version à l'intérieur.
+  **Bug notable trouvé et corrigé** (jamais publié, repéré en construisant
+  la légende du builder — voir plus bas) : `prefix_line()` reconstruisait
+  la ligne via `Line::from(spans)` en ne gardant que `line.spans`, or
+  `Line::styled(texte, style)` pose la couleur sur le champ `line.style`
+  de la ligne (pas sur ses spans, qui restent de simples `Span::raw` sans
+  couleur propre) — `Line::from` repart d'un `style` par défaut, donc
+  toute couleur posée via `Line::styled` était silencieusement perdue, et
+  chaque ligne retombait sur la couleur d'accent du panneau englobant.
+  Ça touchait discrètement *toute* la sidebar du jeu (le score ne virait
+  jamais réellement au doré/rouge selon le résultat, le dernier coup
+  jamais vert/rouge, le vent jamais vert/jaune/rouge — tout s'affichait
+  simplement dans la couleur d'accent fixe du panneau) sans que ça saute
+  aux yeux en `capture-pane` sans `-e` (les couleurs ne sont pas
+  visibles). Corrigé en chaînant `.style(line.style)` après
+  `Line::from(spans)` dans `prefix_line()`. Dans la foulée, la ligne
+  d'aide en bas de `tui::HolePickerView` (~60-70 caractères) était coupée
+  net dans la colonne étroite du sélecteur — signalé, corrigée en
+  plusieurs lignes verticales (une par touche/action) plutôt qu'une seule
+  ligne, comme les autres panneaux d'aide du builder. La liste elle-même
+  défile désormais correctement quand elle dépasse l'espace disponible
+  (`list_scroll_offset`, testée — fenêtre recalculée à chaque rendu à
+  partir de la seule sélection courante, pas d'état persistant
+  nécessaire) — signalé comme manquant, les entrées hors champ dépassaient
+  silencieusement en bas du panneau auparavant.
 - Format `.course` à taille variable par trou : `HoleMeta.width`/`height`
   (optionnels, `#[serde(default)]`) déclarent une grille plus petite que
   100x60, centrée automatiquement dans le canevas complet à l'issue du
@@ -334,14 +358,26 @@ Fait et testé :
   Un premier jet avait retiré la légende de cette colonne (déplacée dans
   l'écran d'en-tête, resté alors un unique panneau plein écran) — signalé
   comme pas satisfaisant, corrigé : la légende revient dans la sidebar de
-  dessin via un panneau "Legend" dédié (`terrain_legend_lines`, deux
-  entrées de terrain par ligne pour tenir dans la colonne étroite), et
-  l'écran d'en-tête (`BuilderSetupView`) devient lui aussi deux colonnes —
+  dessin via un panneau "Legend" dédié (`terrain_legend_lines`, une entrée
+  de terrain par ligne — deux par ligne d'abord essayé, jugé moins
+  lisible et corrigé après signalement), et l'écran d'en-tête
+  (`BuilderSetupView`) devient lui aussi deux colonnes —
   formulaire à gauche, aperçu de la grille vierge à la taille suggérée à
   droite (même `BuilderView` en lecture seule que l'aperçu du sélecteur) —
   cohérent avec les deux autres écrans du builder. Les messages de
   sauvegarde/erreur sont découpés à la limite des mots (`wrap_text`,
-  testée) plutôt que tronqués à mi-mot dans la colonne étroite.
+  testée) plutôt que tronqués à mi-mot dans la colonne étroite. Nom du
+  trou et nom de fichier sont liés dans les deux sens : `BuilderState::new`
+  part d'un nom vide (panneau Hole affichant "(unnamed)"/"(sans nom)"
+  tant qu'il n'est pas renseigné via `N`), la saisie du nom de fichier
+  (`S`) se pré-remplit avec le nom du trou s'il y en a un, et à l'inverse
+  un trou sans nom récupère le nom de fichier tel que tapé (avant
+  nettoyage) comme `name:` à la sauvegarde. Un libellé ("File name:"/
+  "New name:" selon le mode) précède désormais le curseur de saisie dans
+  le panneau Contrôles — absent jusque-là, seul un curseur nu s'affichait.
+  Une estimation de difficulté par trou a été proposée puis écartée : la
+  difficulté reste un concept de parcours, pas de trou (principe déjà
+  établi plus haut), confirmé après discussion.
 - Répertoire de données résolu (`resolve_data_root()`/
   `resolve_data_root_from()`, testée, voir principe directeur ci-dessus) :
   `courses/`, `save.yaml` et `courses/_library/` suivent tous la même
@@ -359,7 +395,7 @@ Pas encore fait (voir `ROADMAP.md` pour le détail) :
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
   `adjust_die_strength`...) a maintenant 41 tests unitaires dans
-  `src/main.rs` (88 au total avec `core` et `tui`), mais rien qui simule un
+  `src/main.rs` (92 au total avec `core` et `tui`), mais rien qui simule un
   vrai terminal/`crossterm`.
 
 ## Publication crates.io

@@ -927,10 +927,12 @@ struct BuilderState {
 impl BuilderState {
     fn new(par: u8, orientation: BuilderOrientation, lang: Lang) -> Self {
         let (width, height) = suggested_declared_size(par, orientation);
-        let name = match lang {
-            Lang::En => "New hole".to_string(),
-            Lang::Fr => "Nouveau trou".to_string(),
-        };
+        // Volontairement vide plutôt qu'un nom générique ("New hole") : un
+        // nom de trou laissé vide est justement le signal que le nom du
+        // fichier de sauvegarde doit être transféré dedans (voir la saisie
+        // du nom de fichier dans `run_builder`) — un nom générique aurait
+        // empêché de distinguer "pas encore nommé" de "nommé par erreur".
+        let name = String::new();
         BuilderState {
             name,
             par,
@@ -1338,7 +1340,13 @@ fn run_builder<B: ratatui::backend::Backend>(
                                 if let Some(path) = state.source_path.clone() {
                                     finish_save(state, path);
                                 } else {
-                                    state.text_input.clear();
+                                    // Le nom du trou (s'il y en a un) sert
+                                    // de proposition de départ pour le nom
+                                    // de fichier, modifiable avant de
+                                    // valider — évite de le retaper deux
+                                    // fois pour le cas courant où les deux
+                                    // coïncident.
+                                    state.text_input = state.name.clone();
                                     state.mode = BuilderMode::EnteringSaveName;
                                 }
                             }
@@ -1369,11 +1377,20 @@ fn run_builder<B: ratatui::backend::Backend>(
                     },
                     BuilderMode::EnteringSaveName => match key.code {
                         KeyCode::Enter => {
-                            if state.text_input.trim().is_empty() {
+                            let trimmed_input = state.text_input.trim();
+                            if trimmed_input.is_empty() {
                                 state.mode = BuilderMode::Drawing;
                                 continue;
                             }
-                            let base_name = sanitize_hole_filename(&state.text_input);
+                            // Si le trou n'a pas de nom (jamais renommé via
+                            // `N`), le nom de fichier tel que tapé (avant
+                            // nettoyage) devient le nom du trou — pour ne
+                            // pas laisser un `name:` vide dans le fichier
+                            // produit.
+                            if state.name.trim().is_empty() {
+                                state.name = trimmed_input.to_string();
+                            }
+                            let base_name = sanitize_hole_filename(trimmed_input);
                             let path =
                                 data_root.join(HOLE_LIBRARY_DIR).join(format!("{base_name}.course"));
                             if path.exists() {

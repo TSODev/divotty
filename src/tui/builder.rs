@@ -6,7 +6,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction as LayoutDirection, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, BorderType, Borders, Widget},
 };
 use std::path::{Path, PathBuf};
@@ -214,23 +214,70 @@ impl<'a> Widget for HolePickerView<'a> {
             Lang::En => "+ New hole",
             Lang::Fr => "+ Nouveau trou",
         };
-        let mut y = inner.y;
-        let (prefix, style) = if self.selected == 0 {
-            ("> ", Style::default().fg(Color::Black).bg(Color::White))
-        } else {
-            ("  ", Style::default().fg(Color::LightGreen))
-        };
-        write_line(buf, inner, y, &format!("{prefix}{new_hole_label}"), style);
-        y += 1;
+        let mut entries: Vec<String> = vec![new_hole_label.to_string()];
+        entries.extend(self.files.iter().map(|path| {
+            path.strip_prefix(self.courses_root)
+                .unwrap_or(path)
+                .display()
+                .to_string()
+        }));
 
-        for (i, path) in self.files.iter().enumerate() {
+        // Une ligne par information plutôt qu'une seule ligne longue
+        // (~60-70 caractères) tronquée dans cette colonne étroite — signalé
+        // après avoir constaté la troncature, corrigé comme les autres
+        // panneaux d'aide du builder (une entrée par ligne).
+        let hint_width = (inner.width as usize).saturating_sub(1);
+        let hint_lines: Vec<String> = if let Some(path) = self.confirm_target {
             let label = path
                 .strip_prefix(self.courses_root)
                 .unwrap_or(path)
                 .display()
                 .to_string();
-            let (prefix, style) = if self.selected == i + 1 {
+            match self.lang {
+                Lang::En => {
+                    let mut lines = wrap_text(&format!("'{label}'"), hint_width);
+                    lines.push("M  modify in place".to_string());
+                    lines.push("D  duplicate".to_string());
+                    lines.push("Esc  back".to_string());
+                    lines
+                }
+                Lang::Fr => {
+                    let mut lines = wrap_text(&format!("« {label} »"), hint_width);
+                    lines.push("M  modifier sur place".to_string());
+                    lines.push("D  dupliquer".to_string());
+                    lines.push("Échap  retour".to_string());
+                    lines
+                }
+            }
+        } else {
+            match self.lang {
+                Lang::En => vec![
+                    "↑ ↓  select".to_string(),
+                    "Enter  choose".to_string(),
+                    "L  language".to_string(),
+                    "Esc  back to menu".to_string(),
+                ],
+                Lang::Fr => vec![
+                    "↑ ↓  choisir".to_string(),
+                    "Entrée  valider".to_string(),
+                    "L  langue".to_string(),
+                    "Échap  retour menu".to_string(),
+                ],
+            }
+        };
+        // Fenêtre défilante sur `entries` : sans ça, une bibliothèque plus
+        // grande que l'espace disponible dépassait silencieusement en bas
+        // du panneau (les entrées hors champ n'étaient jamais dessinées,
+        // sans indication ni moyen d'y accéder) — signalé, corrigé.
+        let available_rows = (inner.height as usize).saturating_sub(hint_lines.len());
+        let offset = list_scroll_offset(self.selected, entries.len(), available_rows);
+        let mut y = inner.y;
+        for (i, label) in entries.iter().enumerate().skip(offset).take(available_rows) {
+            let is_selected = i == self.selected;
+            let (prefix, style) = if is_selected {
                 ("> ", Style::default().fg(Color::Black).bg(Color::White))
+            } else if i == 0 {
+                ("  ", Style::default().fg(Color::LightGreen))
             } else {
                 ("  ", Style::default().fg(Color::White))
             };
@@ -238,28 +285,30 @@ impl<'a> Widget for HolePickerView<'a> {
             y += 1;
         }
 
-        let hint_y = inner.y + inner.height.saturating_sub(1);
-        let hint = if let Some(path) = self.confirm_target {
-            let label = path
-                .strip_prefix(self.courses_root)
-                .unwrap_or(path)
-                .display()
-                .to_string();
-            match self.lang {
-                Lang::En => format!(
-                    "'{label}' — M: modify in place   D: duplicate as new hole   Esc: back"
-                ),
-                Lang::Fr => format!(
-                    "« {label} » — M : modifier sur place   D : dupliquer   Échap : retour"
-                ),
-            }
-        } else {
-            match self.lang {
-                Lang::En => "↑ ↓ select   Enter choose   L language   Esc back to menu".to_string(),
-                Lang::Fr => "↑ ↓ choisir   Entrée valider   L langue   Échap retour menu".to_string(),
-            }
-        };
-        write_line(buf, inner, hint_y, &hint, Style::default().fg(Color::DarkGray));
+        let start_y = (inner.y + inner.height).saturating_sub(hint_lines.len() as u16);
+        for (i, line) in hint_lines.iter().enumerate() {
+            write_line(buf, inner, start_y + i as u16, line, Style::default().fg(Color::DarkGray));
+        }
+    }
+}
+
+/// Décalage de défilement pour garder `selected` visible dans une fenêtre
+/// de `available` lignes parmi `total` entrées (voir `HolePickerView`).
+/// Recalculé à chaque rendu à partir de la seule sélection courante — pas
+/// besoin d'état persistant entre les frames pour un défilement stable :
+/// tant que `selected` tient dans les `available` premières entrées, la
+/// fenêtre reste sur `0` ; au-delà, elle avance juste assez pour révéler
+/// `selected` (comme dernière ligne visible), sans jamais dépasser
+/// `total - available` (pas de zone vide en bas une fois tout défilé).
+fn list_scroll_offset(selected: usize, total: usize, available: usize) -> usize {
+    if available == 0 || total <= available {
+        return 0;
+    }
+    let max_offset = total - available;
+    if selected < available {
+        0
+    } else {
+        (selected + 1 - available).min(max_offset)
     }
 }
 
@@ -329,12 +378,13 @@ impl<'a> Widget for HolePreviewView<'a> {
 }
 
 /// Légende de terrain sous forme de lignes prêtes pour un panneau
-/// (`panel`/`panel_bottom_aligned` dans `sidebar.rs`) — deux entrées par
-/// ligne pour tenir dans une colonne étroite (~28 caractères, contre ~110
-/// pour toute la légende sur une seule ligne). Chaque entrée reprend la
-/// couleur exacte de son terrain sur la carte (`terrain_style` dans
-/// `render.rs`) plutôt qu'une seule couleur uniforme, pour que la légende
-/// serve aussi de repère visuel cohérent avec ce que le joueur dessine.
+/// (`panel`/`panel_bottom_aligned` dans `sidebar.rs`) — une entrée par
+/// ligne (plus lisible qu'en tenir deux par ligne, repéré après un
+/// signalement) plutôt que toute la légende sur une seule ligne de ~110
+/// caractères. Chaque entrée reprend la couleur exacte de son terrain sur
+/// la carte (`terrain_style` dans `render.rs`) plutôt qu'une seule couleur
+/// uniforme, pour que la légende serve aussi de repère visuel cohérent
+/// avec ce que le joueur dessine.
 fn terrain_legend_lines(lang: Lang) -> Vec<Line<'static>> {
     const ITEMS: [(TerrainKind, &str, &str); 10] = [
         (TerrainKind::Tee, "tee", "départ"),
@@ -346,31 +396,29 @@ fn terrain_legend_lines(lang: Lang) -> Vec<Line<'static>> {
         (TerrainKind::Green, "green", "green"),
         (TerrainKind::Hole, "hole", "trou"),
         (TerrainKind::PenaltyZone, "penalty", "pénalité"),
-        (TerrainKind::OutOfBounds, "OOB", "hors-limites"),
+        (TerrainKind::OutOfBounds, "out of bounds", "hors-limites"),
     ];
     let separator = Style::default().fg(Color::DarkGray);
     let mut lines: Vec<Line<'static>> = ITEMS
-        .chunks(2)
-        .map(|chunk| {
-            let mut spans = Vec::with_capacity(3);
-            for (i, (kind, label_en, label_fr)) in chunk.iter().enumerate() {
-                if i > 0 {
-                    spans.push(Span::styled(" ", separator));
-                }
-                let (_, color) = terrain_style(*kind);
-                let key = kind.to_char();
-                let key_display = match (key, lang) {
-                    (' ', Lang::En) => "(sp)".to_string(),
-                    (' ', Lang::Fr) => "(esp)".to_string(),
-                    (c, _) => c.to_string(),
-                };
-                let label = if lang == Lang::En { label_en } else { label_fr };
-                spans.push(Span::styled(
-                    format!("{key_display}={label}"),
-                    Style::default().fg(color).add_modifier(Modifier::BOLD),
-                ));
-            }
-            Line::from(spans)
+        .iter()
+        .map(|(kind, label_en, label_fr)| {
+            let (_, color) = terrain_style(*kind);
+            let key = kind.to_char();
+            // Une seule ligne par terrain maintenant (voir plus haut) : la
+            // touche espace se lit mieux écrite en toutes lettres ("Space")
+            // qu'entre parenthèses collée à un "=", et le libellé complet
+            // "out of bounds" plutôt que l'abréviation "OOB" évite d'avoir
+            // à deviner ce qu'elle veut dire.
+            let key_display = match (key, lang) {
+                (' ', Lang::En) => "Space".to_string(),
+                (' ', Lang::Fr) => "Espace".to_string(),
+                (c, _) => c.to_string(),
+            };
+            let label = if lang == Lang::En { label_en } else { label_fr };
+            Line::styled(
+                format!("{key_display} = {label}"),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            )
         })
         .collect();
     lines.push(Line::styled(
@@ -434,7 +482,7 @@ impl<'a> Widget for BuilderSidebarView<'a> {
             .constraints([
                 Constraint::Length(5),
                 Constraint::Length(4),
-                Constraint::Length(8),
+                Constraint::Length(13),
                 Constraint::Min(0),
             ])
             .split(area);
@@ -443,11 +491,23 @@ impl<'a> Widget for BuilderSidebarView<'a> {
             Lang::En => "Hole",
             Lang::Fr => "Trou",
         };
+        // Nom affiché avec un espace réservé tant qu'il est vide — un trou
+        // sans nom est un état normal (voir `BuilderState::new`) : le nom
+        // du fichier tapé à la sauvegarde (`S`) sera alors transféré ici
+        // automatiquement, plutôt que de laisser un nom générique trompeur.
+        let display_name: &str = if self.name.trim().is_empty() {
+            match self.lang {
+                Lang::En => "(unnamed)",
+                Lang::Fr => "(sans nom)",
+            }
+        } else {
+            self.name
+        };
         let hole_lines = vec![
             Line::styled(
                 match self.lang {
-                    Lang::En => format!("Name: {}", self.name),
-                    Lang::Fr => format!("Nom : {}", self.name),
+                    Lang::En => format!("Name: {display_name}"),
+                    Lang::Fr => format!("Nom : {display_name}"),
                 },
                 Style::default().fg(Color::White),
             ),
@@ -572,7 +632,27 @@ impl<'a> Widget for BuilderSidebarView<'a> {
         } else {
             match self.mode {
                 BuilderMode::Drawing => {}
-                BuilderMode::EditingName | BuilderMode::EnteringSaveName => {
+                BuilderMode::EditingName => {
+                    controls_lines.push(Line::styled(
+                        match self.lang {
+                            Lang::En => "New name:",
+                            Lang::Fr => "Nouveau nom :",
+                        },
+                        Style::default().fg(Color::Gray),
+                    ));
+                    controls_lines.push(Line::styled(
+                        format!("{}_", self.text_input),
+                        Style::default().fg(Color::White),
+                    ));
+                }
+                BuilderMode::EnteringSaveName => {
+                    controls_lines.push(Line::styled(
+                        match self.lang {
+                            Lang::En => "File name:",
+                            Lang::Fr => "Nom de fichier :",
+                        },
+                        Style::default().fg(Color::Gray),
+                    ));
                     controls_lines.push(Line::styled(
                         format!("{}_", self.text_input),
                         Style::default().fg(Color::White),
@@ -604,9 +684,13 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                          S  sauver\nÉchap Échap  menu\nqq  quitter"
                     }
                 },
-                BuilderMode::EditingName | BuilderMode::EnteringSaveName => match self.lang {
+                BuilderMode::EditingName => match self.lang {
                     Lang::En => "Enter  confirm\nEsc  cancel",
                     Lang::Fr => "Entrée  valider\nÉchap  annuler",
+                },
+                BuilderMode::EnteringSaveName => match self.lang {
+                    Lang::En => "(no extension)\nEnter  confirm\nEsc  cancel",
+                    Lang::Fr => "(sans extension)\nEntrée  valider\nÉchap  annuler",
                 },
                 BuilderMode::ConfirmOverwrite => match self.lang {
                     Lang::En => "Enter/Y  overwrite\nEsc/N  rename",
@@ -720,5 +804,32 @@ mod tests {
     #[test]
     fn wrap_text_returns_empty_for_empty_input() {
         assert!(wrap_text("", 24).is_empty());
+    }
+
+    #[test]
+    fn list_scroll_offset_stays_at_zero_while_selection_fits_on_screen() {
+        assert_eq!(list_scroll_offset(0, 20, 5), 0);
+        assert_eq!(list_scroll_offset(4, 20, 5), 0);
+    }
+
+    #[test]
+    fn list_scroll_offset_advances_just_enough_to_reveal_the_selection() {
+        // 20 entrées, 5 visibles à la fois : sélectionner la 6e (index 5)
+        // doit faire défiler d'exactement une ligne pour qu'elle devienne
+        // la dernière visible.
+        assert_eq!(list_scroll_offset(5, 20, 5), 1);
+        assert_eq!(list_scroll_offset(10, 20, 5), 6);
+    }
+
+    #[test]
+    fn list_scroll_offset_never_scrolls_past_the_last_full_page() {
+        // Sélectionner la toute dernière entrée ne doit jamais laisser de
+        // zone vide en bas : le décalage plafonne à `total - available`.
+        assert_eq!(list_scroll_offset(19, 20, 5), 15);
+    }
+
+    #[test]
+    fn list_scroll_offset_is_always_zero_when_everything_fits() {
+        assert_eq!(list_scroll_offset(2, 4, 10), 0);
     }
 }

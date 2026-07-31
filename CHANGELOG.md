@@ -52,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Legend, Controls) with the map filling the right side instead of one
   wide banner above the grid, and the par/orientation setup screen shows a
   live preview of the blank grid at its suggested size next to the form.
+  The hole's name and its save file name are now linked: naming the hole
+  first (`N`) pre-fills the save prompt, and saving an unnamed hole feeds
+  the typed file name back in as its name, so a `.course` file never ends
+  up with a blank name. The save/rename prompts also gained a label
+  ("File name:", "New name:") instead of showing a bare cursor.
 
 ### Changed
 - Courses, save files, and the hole builder's library no longer depend on
