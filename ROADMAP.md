@@ -73,6 +73,17 @@
       aussi pour exercer le futur format de grille taille variable (trous
       courts = grilles compactes, voir v0.4), pas encore fait ici (toujours
       100x60 plein comme le trou de démo).
+- [x] Parcours réels accessibles après un `cargo install` : `courses/demo/`
+      et `courses/quick3/` sont désormais embarqués dans le binaire à la
+      compilation (`include_str!`, `embedded_courses()` dans `main.rs`,
+      nouveau `Course::from_embedded` dans `core::course`), utilisés en
+      repli si le dossier `courses/` est absent sur disque — auparavant un
+      unique trou générique (`fallback_course()`, gardé mais réservé aux
+      tests). Sans ce correctif, un joueur `cargo install` sans le dépôt
+      cloné à côté n'aurait jamais vu l'enchaînement multi-trous (v0.2),
+      la fonctionnalité phare de cette version — corrigé avant publication
+      de 0.2.0. Testé (`embedded_courses_parse_and_match_the_real_courses_on_disk`
+      dans `main.rs`, `from_embedded_*` dans `core::course`).
 
 ## v0.3 — Visée et feedback
 - [x] Vent (direction + force), tiré aléatoirement au chargement du trou

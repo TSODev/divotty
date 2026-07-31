@@ -145,32 +145,60 @@ impl Hole {
     }
 }
 
-impl Course {
-    /// Charge un parcours depuis un dossier contenant un `course.yaml`
-    /// (nom du parcours + ordre des fichiers de trous) et les fichiers `.course`
-    /// correspondants.
-    pub fn load_from_dir(dir: &Path) -> Result<Self, CourseError> {
-        #[derive(Deserialize)]
-        struct CourseIndex {
-            name: String,
-            difficulty: u8,
-            holes: Vec<String>,
-        }
+#[derive(Deserialize)]
+struct CourseIndex {
+    name: String,
+    difficulty: u8,
+    holes: Vec<String>,
+}
 
-        let index_raw = std::fs::read_to_string(dir.join("course.yaml"))?;
-        let index: CourseIndex = serde_yaml::from_str(&index_raw)?;
-
+impl CourseIndex {
+    fn parse(yaml: &str) -> Result<Self, CourseError> {
+        let index: CourseIndex = serde_yaml::from_str(yaml)?;
         if !(1..=4).contains(&index.difficulty) {
             return Err(CourseError::InvalidDifficulty {
                 name: index.name,
                 difficulty: index.difficulty,
             });
         }
+        Ok(index)
+    }
+}
+
+impl Course {
+    /// Charge un parcours depuis un dossier contenant un `course.yaml`
+    /// (nom du parcours + ordre des fichiers de trous) et les fichiers `.course`
+    /// correspondants.
+    pub fn load_from_dir(dir: &Path) -> Result<Self, CourseError> {
+        let index_raw = std::fs::read_to_string(dir.join("course.yaml"))?;
+        let index = CourseIndex::parse(&index_raw)?;
 
         let mut holes = Vec::with_capacity(index.holes.len());
         for filename in &index.holes {
             let raw = std::fs::read_to_string(dir.join(filename))?;
             holes.push(Hole::parse(&raw)?);
+        }
+
+        Ok(Course {
+            name: index.name,
+            difficulty: index.difficulty,
+            holes,
+        })
+    }
+
+    /// Construit un parcours à partir de contenu déjà en mémoire (`course.yaml`
+    /// + un fichier `.course` par trou, dans l'ordre déclaré par `course.yaml`),
+    /// sans passer par le disque. Utilisé pour les parcours embarqués dans le
+    /// binaire (`include_str!` dans `main.rs`) : un joueur qui lance `divotty`
+    /// après un `cargo install`, sans le dossier `courses/` à côté (voir
+    /// `CLAUDE.md`), voit ainsi les vrais parcours plutôt qu'un unique trou
+    /// générique de secours.
+    pub fn from_embedded(course_yaml: &str, hole_raws: &[&str]) -> Result<Self, CourseError> {
+        let index = CourseIndex::parse(course_yaml)?;
+
+        let mut holes = Vec::with_capacity(hole_raws.len());
+        for raw in hole_raws {
+            holes.push(Hole::parse(raw)?);
         }
 
         Ok(Course {
@@ -278,6 +306,29 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("courses");
         let courses = Course::discover(&root).expect("la découverte doit réussir");
         assert!(courses.iter().any(|(_, c)| c.name == "Quick 3"));
+    }
+
+    #[test]
+    fn from_embedded_parses_content_held_in_memory() {
+        let course_yaml = "name: \"Test embarqué\"\ndifficulty: 2\nholes:\n  - unused.course\n";
+        let hole_raw = build_valid_raw();
+
+        let course = Course::from_embedded(course_yaml, &[&hole_raw])
+            .expect("le contenu embarqué valide doit parser");
+
+        assert_eq!(course.name, "Test embarqué");
+        assert_eq!(course.difficulty, 2);
+        assert_eq!(course.holes.len(), 1);
+        assert_eq!(course.holes[0].meta.par, 3);
+    }
+
+    #[test]
+    fn from_embedded_rejects_out_of_range_difficulty() {
+        let course_yaml = "name: \"Test\"\ndifficulty: 9\nholes:\n  - unused.course\n";
+        let hole_raw = build_valid_raw();
+
+        let err = Course::from_embedded(course_yaml, &[&hole_raw]).unwrap_err();
+        assert!(matches!(err, CourseError::InvalidDifficulty { .. }));
     }
 
     #[test]

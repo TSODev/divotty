@@ -82,6 +82,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never actually used it.
 
 ### Fixed
+- A `cargo install`'d game with no `courses/` folder next to it now falls
+  back to the real demo and Quick 3 courses (embedded in the binary at
+  compile time) instead of a single generic hole — previously a player
+  who didn't also clone the repo would never see the multi-hole chaining
+  this release adds, since the bundled fallback was always a single hole.
 - The tee and hole markers no longer get hidden behind the shot preview
   overlay (trajectory guide dots, the expected-landing marker) when they
   happen to line up — the landmark's glyph stays visible, only its color

@@ -30,8 +30,10 @@ const DIE_STRENGTH_FLOOR: u8 = 3;
 
 /// Liste les parcours jouables sous `courses/`, avec leur dossier d'origine
 /// (nécessaire pour recharger/sauvegarder). Si `courses/` n'existe pas ou ne
-/// contient rien, renvoie un unique parcours de démonstration codé en dur —
-/// sans dossier associé, donc non sauvegardable.
+/// contient rien (ex. après un `cargo install`, voir `CLAUDE.md` — le
+/// dossier reste dans le crate source, pas copié à côté du binaire
+/// installé), bascule sur les parcours embarqués (`embedded_courses()`) —
+/// sans dossier associé, donc non sauvegardables.
 fn discover_courses() -> Result<Vec<(Option<PathBuf>, Course)>> {
     let root = Path::new("courses");
     if root.exists() {
@@ -40,9 +42,37 @@ fn discover_courses() -> Result<Vec<(Option<PathBuf>, Course)>> {
             return Ok(found.into_iter().map(|(dir, course)| (Some(dir), course)).collect());
         }
     }
-    Ok(vec![(None, fallback_course()?)])
+    Ok(embedded_courses()?.into_iter().map(|course| (None, course)).collect())
 }
 
+/// Contenu de `courses/demo/` et `courses/quick3/` figé dans le binaire à la
+/// compilation (`include_str!`), pour qu'un joueur sans le dossier
+/// `courses/` sur disque voie quand même les vrais parcours (dont
+/// l'enchaînement multi-trous de Quick 3) plutôt qu'un unique trou
+/// générique — voir `discover_courses`. Un test (`embedded_courses_parse`)
+/// vérifie que ce contenu reste parsable à chaque `cargo test`.
+fn embedded_courses() -> Result<Vec<Course>> {
+    const DEMO_COURSE_YAML: &str = include_str!("../courses/demo/course.yaml");
+    const DEMO_HOLE_01: &str = include_str!("../courses/demo/hole_01.course");
+
+    const QUICK3_COURSE_YAML: &str = include_str!("../courses/quick3/course.yaml");
+    const QUICK3_HOLE_01: &str = include_str!("../courses/quick3/hole_01.course");
+    const QUICK3_HOLE_02: &str = include_str!("../courses/quick3/hole_02.course");
+    const QUICK3_HOLE_03: &str = include_str!("../courses/quick3/hole_03.course");
+
+    Ok(vec![
+        Course::from_embedded(DEMO_COURSE_YAML, &[DEMO_HOLE_01])?,
+        Course::from_embedded(
+            QUICK3_COURSE_YAML,
+            &[QUICK3_HOLE_01, QUICK3_HOLE_02, QUICK3_HOLE_03],
+        )?,
+    ])
+}
+
+/// Trou de secours minimal généré en mémoire, réservé aux tests unitaires
+/// (rapide, sans dépendre du contenu réel des parcours) — le repli "pas de
+/// dossier `courses/`" en jeu utilise désormais `embedded_courses()`.
+#[cfg(test)]
 fn fallback_course() -> Result<Course> {
     // Trou de secours généré en mémoire : fairway droit, un bunker, un peu
     // d'eau sur le côté, green autour du trou. Tee et trou espacés d'environ
@@ -944,5 +974,28 @@ mod tests {
 
         state.restart_hole();
         assert_eq!(state.die_strength, 6, "rejouer le trou doit aussi remettre le plafond à 6");
+    }
+
+    #[test]
+    fn embedded_courses_parse_and_match_the_real_courses_on_disk() {
+        // Garde-fou : si `courses/demo/` ou `courses/quick3/` change sans
+        // que le contenu embarqué (`include_str!`) suive, ce test doit le
+        // détecter avant publication plutôt qu'un joueur sans dossier
+        // `courses/` sur disque.
+        let embedded = embedded_courses().expect("le contenu embarqué doit parser");
+        assert_eq!(embedded.len(), 2);
+
+        let demo = &embedded[0];
+        assert_eq!(demo.name, "Parcours de démonstration");
+        assert_eq!(demo.holes.len(), 1);
+        assert_eq!(demo.holes[0].meta.par, 4);
+
+        let quick3 = &embedded[1];
+        assert_eq!(quick3.name, "Quick 3");
+        assert_eq!(quick3.holes.len(), 3);
+        assert_eq!(
+            quick3.holes.iter().map(|h| h.meta.par as u32).sum::<u32>(),
+            12
+        );
     }
 }

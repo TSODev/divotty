@@ -84,8 +84,16 @@ seule règle de zone basse (pas une simulation d'arc de trajectoire).
 - **Chemins relatifs au cwd, pas au binaire** : `courses/` et `save.yaml`
   sont résolus relativement au répertoire courant d'exécution. Lancer le
   jeu depuis la racine du dépôt (`cargo run`). Si `courses/` est absent
-  (ex. après un `cargo install`), un parcours de secours généré en mémoire
-  prend le relais — voir `fallback_course()` dans `src/main.rs`.
+  (ex. après un `cargo install`, le dossier reste dans le crate source,
+  jamais copié à côté du binaire installé), le jeu bascule sur les vrais
+  parcours (`courses/demo/` et `courses/quick3/`) **embarqués dans le
+  binaire à la compilation** (`include_str!`, voir `embedded_courses()`
+  dans `src/main.rs`) — pas un trou générique de secours (voir historique
+  ci-dessous, ça l'a été jusqu'à ce que ce soit corrigé avant 0.2.0). Ces
+  parcours embarqués ne sont pas sauvegardables (pas de dossier associé,
+  comme n'importe quel parcours sans `course_dir`). Un test
+  (`embedded_courses_parse_and_match_the_real_courses_on_disk`) vérifie
+  que le contenu embarqué reste parsable à chaque `cargo test`.
 
 ## Architecture (rappel rapide)
 
@@ -191,8 +199,9 @@ Pas encore fait (voir `ROADMAP.md` pour le détail) :
   point de fairway valide le long de la trajectoire).
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
-  `nudge_aim`, `restart_hole`, `finished`, `advance_hole`) a maintenant 8
-  tests unitaires dans `src/main.rs`, mais rien qui simule un vrai
+  `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
+  `adjust_die_strength`...) a maintenant 15 tests unitaires dans
+  `src/main.rs` (41 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io
@@ -210,10 +219,13 @@ credentials dans `~/.cargo/credentials.toml`).
   explicitement avec l'utilisateur avant de l'exécuter (action irréversible
   et visible publiquement).
 - Après un `cargo install`, le binaire n'a plus accès à `courses/demo/`
-  (resté dans le crate source, pas copié à côté du binaire installé) : le
-  parcours de secours généré en mémoire (`fallback_course()` dans
-  `src/main.rs`) prend le relais automatiquement — pas de crash, mais
-  l'utilisateur voit un trou générique plutôt que « Le Ravin ».
+  ni `courses/quick3/` sur disque (restés dans le crate source, pas
+  copiés à côté du binaire installé) : les vrais parcours, embarqués dans
+  le binaire à la compilation (`embedded_courses()` dans `src/main.rs`,
+  voir plus haut), prennent le relais automatiquement — un joueur
+  `cargo install` voit donc « Le Ravin » et « Quick 3 », pas un trou
+  générique (limitation corrigée avant la publication de 0.2.0 ; c'était
+  le cas pour 0.1.0).
 
 ## Contraintes d'environnement rencontrées
 
