@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-31
+
 ### Added
 - Multi-hole courses now actually chain holes: once a hole is holed out,
   pressing `N` moves on to the next one (ball, aim, wind, strokes and club
