@@ -41,8 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently appending a counter, so re-saving under the same name actually
   updates that file rather than piling up copies. A saved file is always
   one the game can already load, since saving validates it the same way
-  loading does. Not yet supported: loading an existing `.course` file
-  to edit or duplicate it (coming in a follow-up).
+  loading does. Pressing `E` now opens a picker instead of jumping
+  straight to a blank hole: choose "+ New hole", or pick any existing
+  `.course` file to open for editing — either "modify in place" (saves
+  straight back to that same file) or "duplicate" (saves as a new file,
+  same as a brand-new hole).
 
 ### Changed
 - Putting is less of a coin flip now: the Putter's accuracy improves the

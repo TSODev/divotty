@@ -266,7 +266,7 @@
       fichier 100x60 sans `width`/`height` déclarés) et vérifié
       visuellement (trou 20x12 joué en tmux : tee/trou/trajectoire/coup
       tous corrects, hors-limites tout autour).
-- [ ] Builder de trous : éditeur clavier intégré au TUI, dessin case par
+- [x] Builder de trous : éditeur clavier intégré au TUI, dessin case par
       case avec rendu affiché en direct au fur et à mesure, retour en
       arrière (undo) sur les dernières cases peintes, et possibilité de
       partir d'une grille vierge ou d'un fichier `.course` existant chargé
@@ -278,12 +278,14 @@
       `Hole::parse` réussi, pas d'étape de relecture/transcription séparée
       après coup).
 
-      **Progression** : phases 1-8 faites et testées (accessible depuis le
+      **Progression** : phases 1-9 faites et testées (accessible depuis le
       menu, touche `E`) — un trou complet, dessiné entièrement au clavier,
-      se sauvegarde et se joue de bout en bout (vérifié en tmux : parcours
-      créé, joué, chargé après relance du binaire). Reste : charger/
-      dupliquer un fichier existant (phase 9), estimation de distance
-      pendant l'édition et ajout à `course.yaml` (phase 10, hors scope v1).
+      se sauvegarde et se joue de bout en bout, et un trou existant peut
+      être chargé pour modification sur place ou duplication (vérifié en
+      tmux : parcours créé, joué, chargé après relance du binaire ; trou
+      existant dupliqué puis modifié en place sans toucher au fichier
+      d'origine). Reste hors scope v1 (phase 10) : estimation de distance
+      pendant l'édition et ajout/retrait d'un trou dans `course.yaml`.
 
       **Alternatives envisagées et écartées** :
       - Scan/photo du canevas PDF (`tools/hole_design_canvas.pdf`) dessiné
@@ -451,12 +453,30 @@
          que le trou n'est pas encore inclus dans un parcours, sans faire
          sortir automatiquement du builder (comme les messages d'erreur)
          pour laisser le temps de le lire.
-      9. **Charger un fichier existant** : petit sélecteur parcourant
-         `courses/**/*.course` (même esprit que `Course::discover`, mais
-         fichier par fichier), au choix "Modifier" (réécrit le même
-         chemin) ou "Dupliquer" (nouveau nom demandé). Recharge grille +
-         meta dans le `BuilderState` (l'orientation de l'étape 2 devient
-         alors sans effet, la grille existante impose déjà sa forme).
+      9. [x] **Charger un fichier existant** : depuis le menu, `E` ouvre
+         désormais un sélecteur (`pick_hole_to_build`, `tui::
+         HolePickerView`) plutôt que d'aller directement à l'en-tête d'un
+         trou neuf — "+ Nouveau trou" en premier, puis chaque fichier
+         `.course` trouvé sous `courses/*/` (`discover_hole_files`, testée
+         — un niveau de sous-dossiers, comme `Course::discover`, donc
+         `courses/_library/` est inclus). Choisir un fichier existant
+         demande "Modifier" (`M`, réécrit directement ce fichier — `S`
+         saute alors la saisie de nom et l'écran `ConfirmOverwrite`,
+         puisque c'est justement le fichier choisi pour être remplacé) ou
+         "Dupliquer" (`D`, comportement d'un trou neuf : nom demandé à
+         chaque sauvegarde, dans `courses/_library/`, avec confirmation
+         d'écrasement en cas de collision). `Hole::local_tiles()`
+         (testée, réutilisée par `to_course_string` — supprime une
+         duplication de calcul d'offset) extrait la sous-grille locale
+         depuis le `Hole` chargé ; `BuilderState::from_existing_hole`
+         (testée) construit l'état d'édition à partir de là, en déduisant
+         l'orientation du rapport largeur/hauteur de la grille chargée
+         (ne détermine que le sens d'avancée automatique de la frappe, pas
+         la taille — celle-ci reste celle du fichier). Vérifié en tmux :
+         un trou existant se charge, se modifie, se sauvegarde en place
+         sans écraser un autre fichier (dupliqué au préalable pour tester
+         sans risque sur le vrai trou de démo) et un trou neuf reste
+         accessible normalement depuis le même sélecteur.
       10. *(Plus tard, hors scope v1)* Estimation des longueurs de coup
           pendant l'édition, en réutilisant `core::preview_shot` depuis la
           position du curseur — utile pour doser bunkers/rough/eau, mais

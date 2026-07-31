@@ -13,7 +13,7 @@ use crate::core::{
 };
 use crate::tui::{
     BuilderHeaderView, BuilderMode, BuilderOrientation, BuilderSetupView, BuilderView,
-    CourseMenuState, CourseView, Lang, ScorecardView, SidebarState, Viewport,
+    CourseMenuState, CourseView, HolePickerView, Lang, ScorecardView, SidebarState, Viewport,
 };
 use rand::Rng;
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction as LayoutDirection, Layout}, Terminal};
@@ -459,8 +459,25 @@ fn main() -> Result<()> {
                     }
                 }
                 MenuChoice::NewHole => {
-                    let Some(mut builder) = setup_builder(&mut terminal, &mut lang)? else {
+                    let Some(launch) = pick_hole_to_build(&mut terminal, &mut lang)? else {
                         continue;
+                    };
+                    let mut builder = match launch {
+                        BuilderLaunch::New => {
+                            let Some(b) = setup_builder(&mut terminal, &mut lang)? else {
+                                continue;
+                            };
+                            b
+                        }
+                        BuilderLaunch::Existing(path, modify_in_place) => {
+                            let raw = std::fs::read_to_string(&path)?;
+                            let hole = Hole::parse(&raw)?;
+                            BuilderState::from_existing_hole(
+                                &hole,
+                                if modify_in_place { Some(path) } else { None },
+                                lang,
+                            )
+                        }
                     };
                     match run_builder(&mut terminal, &mut builder)? {
                         BuilderExit::Quit => return Ok(()),
@@ -855,6 +872,13 @@ struct BuilderState {
     /// sortir, sans logique dédiée : la frappe `S` habituelle prend le relai
     /// normalement et cette confirmation se réinitialise au passage).
     exit_confirm: bool,
+    /// Chemin d'origine si ce trou a été chargé en mode "Modifier" (voir
+    /// `pick_hole_to_build`/`load_builder_from_file`) : `S` réécrit alors
+    /// directement ce fichier, sans redemander de nom ni passer par
+    /// `BuilderMode::ConfirmOverwrite` (c'est justement le fichier que le
+    /// joueur a choisi d'éditer). `None` pour un trou neuf ou chargé en
+    /// "Dupliquer" — sauvegarde normale dans la bibliothèque à chaque fois.
+    source_path: Option<PathBuf>,
 }
 
 impl BuilderState {
@@ -880,6 +904,43 @@ impl BuilderState {
             lang,
             quit_confirm: false,
             exit_confirm: false,
+            source_path: None,
+        }
+    }
+
+    /// Charge un trou existant (fichier `.course` déjà parsé) dans un
+    /// `BuilderState` pour édition — voir `ROADMAP.md`, phase "charger un
+    /// fichier existant". `source_path` fixe le comportement de `S` :
+    /// `Some` réécrit directement ce fichier ("Modifier"), `None` redemande
+    /// un nom à chaque sauvegarde comme un trou neuf ("Dupliquer").
+    /// L'orientation est déduite du rapport largeur/hauteur de la grille
+    /// chargée (déterminante seulement pour le sens d'avancée automatique
+    /// de la frappe — la taille elle-même reste celle du fichier).
+    fn from_existing_hole(hole: &Hole, source_path: Option<PathBuf>, lang: Lang) -> Self {
+        let width = hole.meta.width.unwrap_or(COURSE_WIDTH);
+        let height = hole.meta.height.unwrap_or(COURSE_HEIGHT);
+        let orientation = if width >= height {
+            BuilderOrientation::Horizontal
+        } else {
+            BuilderOrientation::Vertical
+        };
+        BuilderState {
+            name: hole.meta.name.clone(),
+            par: hole.meta.par,
+            orientation,
+            width,
+            height,
+            tiles: hole.local_tiles(),
+            cursor: Pos { x: 0, y: 0 },
+            undo_stack: Vec::new(),
+            mode: BuilderMode::Drawing,
+            text_input: String::new(),
+            pending_save_path: None,
+            message: None,
+            lang,
+            quit_confirm: false,
+            exit_confirm: false,
+            source_path,
         }
     }
 
@@ -960,6 +1021,108 @@ impl BuilderState {
             .map(|row| row.iter().map(|t| t.to_char()).collect::<String>())
             .collect();
         format!("{}---\n{}\n", meta_yaml, lines.join("\n"))
+    }
+}
+
+/// Liste tous les fichiers `.course` trouvés sous `root/*/` (un seul niveau
+/// de sous-dossiers, comme `Course::discover` — cohérent avec la structure
+/// `courses/<parcours>/*.course` et `courses/_library/*.course`). Pas
+/// seulement ceux référencés par un `course.yaml` : sert au builder pour
+/// retrouver aussi un trou orphelin de la bibliothèque. Triés pour un
+/// affichage stable.
+fn discover_hole_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return files;
+    };
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let Ok(sub_entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for sub in sub_entries.flatten() {
+            let path = sub.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("course") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+/// Choix fait par le joueur à l'écran de sélection du builder
+/// (`pick_hole_to_build`) : un trou neuf, ou un trou existant chargé pour
+/// modification sur place (réécrit le même fichier) ou duplication
+/// (nouveau nom demandé, comme un trou neuf) — voir `ROADMAP.md`, phase
+/// "charger un fichier existant".
+enum BuilderLaunch {
+    New,
+    /// `true` = modifier sur place, `false` = dupliquer.
+    Existing(PathBuf, bool),
+}
+
+/// Écran d'entrée du builder : "+ Nouveau trou" en premier, puis chaque
+/// fichier `.course` trouvé sous `courses/` (`discover_hole_files`). Choisir
+/// un fichier existant demande ensuite "Modifier" ou "Dupliquer" avant de
+/// continuer. `None` si annulé (Échap, retour au menu).
+fn pick_hole_to_build<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    lang: &mut Lang,
+) -> Result<Option<BuilderLaunch>> {
+    let files = discover_hole_files(Path::new("courses"));
+    let mut selected = 0usize;
+    let total = files.len() + 1; // +1 pour "+ Nouveau trou"
+    let mut confirm_target: Option<PathBuf> = None;
+
+    loop {
+        terminal.draw(|frame| {
+            frame.render_widget(
+                HolePickerView {
+                    lang: *lang,
+                    files: &files,
+                    selected,
+                    confirm_target: confirm_target.as_deref(),
+                },
+                frame.size(),
+            );
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                if confirm_target.is_some() {
+                    match key.code {
+                        KeyCode::Char('m') | KeyCode::Char('M') => {
+                            let path = confirm_target.take().unwrap();
+                            return Ok(Some(BuilderLaunch::Existing(path, true)));
+                        }
+                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                            let path = confirm_target.take().unwrap();
+                            return Ok(Some(BuilderLaunch::Existing(path, false)));
+                        }
+                        KeyCode::Esc => confirm_target = None,
+                        _ => {}
+                    }
+                } else {
+                    match key.code {
+                        KeyCode::Esc => return Ok(None),
+                        KeyCode::Up => selected = selected.saturating_sub(1),
+                        KeyCode::Down => selected = (selected + 1).min(total.saturating_sub(1)),
+                        KeyCode::Enter => {
+                            if selected == 0 {
+                                return Ok(Some(BuilderLaunch::New));
+                            }
+                            confirm_target = Some(files[selected - 1].clone());
+                        }
+                        KeyCode::Char('l') | KeyCode::Char('L') => *lang = lang.next(),
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1083,8 +1246,12 @@ fn run_builder<B: ratatui::backend::Backend>(
                                 state.mode = BuilderMode::EditingName;
                             }
                             KeyCode::Char('s') | KeyCode::Char('S') => {
-                                state.text_input.clear();
-                                state.mode = BuilderMode::EnteringSaveName;
+                                if let Some(path) = state.source_path.clone() {
+                                    finish_save(state, path);
+                                } else {
+                                    state.text_input.clear();
+                                    state.mode = BuilderMode::EnteringSaveName;
+                                }
                             }
                             KeyCode::Char(c) => {
                                 if let Some(terrain) = terrain_from_builder_key(c) {
@@ -1712,5 +1879,75 @@ mod tests {
         let hole = Hole::parse(&raw).expect("un trou valide doit parser");
         assert_eq!(hole.meta.par, 3);
         assert_eq!(hole.tee, Pos { x: (COURSE_WIDTH - 5) / 2, y: (COURSE_HEIGHT - 3) / 2 + 1 });
+    }
+
+    #[test]
+    fn discover_hole_files_finds_course_files_one_level_deep() {
+        let root = std::env::temp_dir().join(format!("divotty_test_discover_{}", std::process::id()));
+        std::fs::create_dir_all(root.join("demo")).unwrap();
+        std::fs::create_dir_all(root.join("_library")).unwrap();
+        std::fs::write(root.join("demo/hole_01.course"), "x").unwrap();
+        std::fs::write(root.join("_library/mon_trou.course"), "x").unwrap();
+        std::fs::write(root.join("demo/course.yaml"), "x").unwrap(); // pas un .course, ignoré
+
+        let files = discover_hole_files(&root);
+        assert_eq!(files.len(), 2);
+        assert!(files.contains(&root.join("demo/hole_01.course")));
+        assert!(files.contains(&root.join("_library/mon_trou.course")));
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn discover_hole_files_returns_empty_for_a_missing_root() {
+        let root = std::env::temp_dir().join("divotty_test_discover_never_exists_xyz");
+        assert!(discover_hole_files(&root).is_empty());
+    }
+
+    /// Grille déclarée `width`x`height` avec un `D`/`H` aux coins opposés —
+    /// équivalent local à `core::course::tests::build_small_raw`, pas
+    /// réutilisable directement d'un module de test à l'autre.
+    fn small_hole_raw(width: usize, height: usize) -> String {
+        let mut lines = Vec::with_capacity(height);
+        for y in 0..height {
+            let mut row = vec!['.'; width];
+            if y == 0 {
+                row[0] = 'D';
+            }
+            if y == height - 1 {
+                row[width - 1] = 'H';
+            }
+            lines.push(row.into_iter().collect::<String>());
+        }
+        format!(
+            "name: \"Petit trou\"\npar: 3\nwidth: {width}\nheight: {height}\n---\n{}\n",
+            lines.join("\n")
+        )
+    }
+
+    #[test]
+    fn from_existing_hole_preserves_meta_and_infers_orientation() {
+        let raw = small_hole_raw(20, 10); // largeur > hauteur : horizontal
+        let hole = Hole::parse(&raw).expect("le petit trou doit parser");
+
+        let builder = BuilderState::from_existing_hole(&hole, None, Lang::En);
+        assert_eq!(builder.name, hole.meta.name);
+        assert_eq!(builder.par, hole.meta.par);
+        assert_eq!(builder.width, 20);
+        assert_eq!(builder.height, 10);
+        assert_eq!(builder.orientation, BuilderOrientation::Horizontal);
+        assert_eq!(builder.tiles, hole.local_tiles());
+        assert_eq!(builder.source_path, None);
+    }
+
+    #[test]
+    fn from_existing_hole_infers_vertical_orientation_and_keeps_source_path() {
+        let raw = small_hole_raw(10, 20); // hauteur > largeur : vertical
+        let hole = Hole::parse(&raw).expect("le petit trou doit parser");
+        let path = PathBuf::from("courses/demo/hole_01.course");
+
+        let builder = BuilderState::from_existing_hole(&hole, Some(path.clone()), Lang::Fr);
+        assert_eq!(builder.orientation, BuilderOrientation::Vertical);
+        assert_eq!(builder.source_path, Some(path));
     }
 }

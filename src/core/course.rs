@@ -211,14 +211,36 @@ impl Hole {
         self.tiles.get(pos.y)?.get(pos.x).copied()
     }
 
+    /// Extrait la sous-grille locale (taille déclarée par `meta.width`/
+    /// `meta.height`, ou la grille 100x60 entière si non déclarés) au même
+    /// offset de centrage que celui utilisé par `parse`. Utilisée par
+    /// `to_course_string` et par le builder de trous pour recharger un trou
+    /// existant en édition (voir `ROADMAP.md`, phase "charger un fichier
+    /// existant") : le builder dessine sur cette sous-grille, pas sur les
+    /// 100x60 cases complètes qui incluent le remplissage hors-limites.
+    pub fn local_tiles(&self) -> Vec<Vec<TerrainKind>> {
+        let declared_w = self.meta.width.unwrap_or(COURSE_WIDTH);
+        let declared_h = self.meta.height.unwrap_or(COURSE_HEIGHT);
+        let offset_x = (COURSE_WIDTH - declared_w) / 2;
+        let offset_y = (COURSE_HEIGHT - declared_h) / 2;
+
+        (0..declared_h)
+            .map(|y| {
+                (0..declared_w)
+                    .map(|x| self.tiles[offset_y + y][offset_x + x])
+                    .collect()
+            })
+            .collect()
+    }
+
     /// Sérialise ce trou vers le format `.course` (frontmatter YAML + grille
     /// ASCII) — inverse de `Hole::parse`. Si `meta.width`/`meta.height` sont
-    /// déclarés, seule la sous-grille correspondante (au même offset de
-    /// centrage que `Hole::parse`) est réécrite ; sinon la grille 100x60
-    /// complète l'est. Utilisée par le builder de trous (voir `ROADMAP.md`)
-    /// pour produire un fichier valide par construction avant de l'écrire
-    /// sur disque : sauvegarder, c'est appeler cette fonction puis vérifier
-    /// que `Hole::parse` du résultat réussit.
+    /// déclarés, seule la sous-grille correspondante (`local_tiles`) est
+    /// réécrite ; sinon la grille 100x60 complète l'est. Utilisée par le
+    /// builder de trous (voir `ROADMAP.md`) pour produire un fichier valide
+    /// par construction avant de l'écrire sur disque : sauvegarder, c'est
+    /// appeler cette fonction puis vérifier que `Hole::parse` du résultat
+    /// réussit.
     pub fn to_course_string(&self) -> String {
         let mut meta_yaml =
             serde_yaml::to_string(&self.meta).expect("HoleMeta se sérialise toujours en YAML");
@@ -226,17 +248,10 @@ impl Hole {
             meta_yaml.push('\n');
         }
 
-        let declared_w = self.meta.width.unwrap_or(COURSE_WIDTH);
-        let declared_h = self.meta.height.unwrap_or(COURSE_HEIGHT);
-        let offset_x = (COURSE_WIDTH - declared_w) / 2;
-        let offset_y = (COURSE_HEIGHT - declared_h) / 2;
-
-        let lines: Vec<String> = (0..declared_h)
-            .map(|y| {
-                (0..declared_w)
-                    .map(|x| self.tiles[offset_y + y][offset_x + x].to_char())
-                    .collect()
-            })
+        let lines: Vec<String> = self
+            .local_tiles()
+            .into_iter()
+            .map(|row| row.into_iter().map(|t| t.to_char()).collect::<String>())
             .collect();
 
         format!("{}---\n{}\n", meta_yaml, lines.join("\n"))
@@ -555,5 +570,28 @@ mod tests {
         assert_eq!(reparsed.tee, hole.tee);
         assert_eq!(reparsed.hole_pos, hole.hole_pos);
         assert_eq!(reparsed.tiles, hole.tiles);
+    }
+
+    #[test]
+    fn local_tiles_extracts_the_declared_sub_grid() {
+        let raw = build_small_raw(20, 10);
+        let hole = Hole::parse(&raw).expect("le petit trou doit parser");
+
+        let local = hole.local_tiles();
+        assert_eq!(local.len(), 10);
+        assert_eq!(local[0].len(), 20);
+        // Le tee/trou locaux (coordonnées avant centrage) sont bien
+        // retrouvés à (0,0) et (19,9), comme construits par `build_small_raw`.
+        assert_eq!(local[0][0], TerrainKind::Tee);
+        assert_eq!(local[9][19], TerrainKind::Hole);
+    }
+
+    #[test]
+    fn local_tiles_returns_the_full_grid_when_no_size_is_declared() {
+        let raw = build_valid_raw();
+        let hole = Hole::parse(&raw).expect("le trou plein format doit parser");
+
+        let local = hole.local_tiles();
+        assert_eq!(local, hole.tiles);
     }
 }

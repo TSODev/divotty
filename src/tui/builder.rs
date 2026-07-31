@@ -7,6 +7,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, BorderType, Borders, Widget},
 };
+use std::path::{Path, PathBuf};
 
 /// Sens dans lequel la frappe directe de terrain (voir `ROADMAP.md`, builder
 /// de trous) avance automatiquement le curseur : ligne par ligne pour un
@@ -147,6 +148,82 @@ impl Widget for BuilderSetupView {
                 Style::default().fg(Color::White),
             );
         }
+    }
+}
+
+/// Écran d'entrée du builder : "+ Nouveau trou" en premier, puis chaque
+/// fichier `.course` trouvé sous `courses/` — choisir un fichier existant
+/// affiche ensuite une confirmation "Modifier ou Dupliquer ?" à la place de
+/// la ligne d'aide habituelle (voir `pick_hole_to_build` dans `main.rs`).
+pub struct HolePickerView<'a> {
+    pub lang: Lang,
+    pub files: &'a [PathBuf],
+    pub selected: usize,
+    /// `Some(chemin)` quand un fichier vient d'être choisi et qu'on attend
+    /// la confirmation modifier/dupliquer.
+    pub confirm_target: Option<&'a Path>,
+}
+
+impl<'a> Widget for HolePickerView<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let title = match self.lang {
+            Lang::En => "Hole builder — choose",
+            Lang::Fr => "Éditeur de trou — choisir",
+        };
+        let block = Block::default().borders(Borders::ALL).title(title);
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        let new_hole_label = match self.lang {
+            Lang::En => "+ New hole",
+            Lang::Fr => "+ Nouveau trou",
+        };
+        let mut y = inner.y;
+        let (prefix, style) = if self.selected == 0 {
+            ("> ", Style::default().fg(Color::Black).bg(Color::White))
+        } else {
+            ("  ", Style::default().fg(Color::LightGreen))
+        };
+        write_line(buf, inner, y, &format!("{prefix}{new_hole_label}"), style);
+        y += 1;
+
+        for (i, path) in self.files.iter().enumerate() {
+            let label = path
+                .strip_prefix("courses")
+                .unwrap_or(path)
+                .display()
+                .to_string();
+            let (prefix, style) = if self.selected == i + 1 {
+                ("> ", Style::default().fg(Color::Black).bg(Color::White))
+            } else {
+                ("  ", Style::default().fg(Color::White))
+            };
+            write_line(buf, inner, y, &format!("{prefix}{label}"), style);
+            y += 1;
+        }
+
+        let hint_y = inner.y + inner.height.saturating_sub(1);
+        let hint = if let Some(path) = self.confirm_target {
+            let label = path
+                .strip_prefix("courses")
+                .unwrap_or(path)
+                .display()
+                .to_string();
+            match self.lang {
+                Lang::En => format!(
+                    "'{label}' — M: modify in place   D: duplicate as new hole   Esc: back"
+                ),
+                Lang::Fr => format!(
+                    "« {label} » — M : modifier sur place   D : dupliquer   Échap : retour"
+                ),
+            }
+        } else {
+            match self.lang {
+                Lang::En => "↑ ↓ select   Enter choose   L language   Esc back to menu".to_string(),
+                Lang::Fr => "↑ ↓ choisir   Entrée valider   L langue   Échap retour menu".to_string(),
+            }
+        };
+        write_line(buf, inner, hint_y, &hint, Style::default().fg(Color::DarkGray));
     }
 }
 

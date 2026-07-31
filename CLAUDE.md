@@ -253,10 +253,14 @@ Fait et testé :
   contre la hauteur attendue (`CourseError::BadRowCount`) — ce n'était pas
   le cas avant, un trou avec trop/pas assez de lignes aurait pu parser
   silencieusement avec la mauvaise hauteur.
-- Builder de trous (phases 1-8 sur 11, voir `ROADMAP.md` pour le détail et
-  ce qui reste) : depuis le menu (`E`), un en-tête minimal (par obligatoire,
-  orientation) suggère une taille de grille (`suggested_declared_size`),
-  puis un trou se dessine entièrement au clavier dans `BuilderState`
+- Builder de trous (phases 1-9 sur 11, voir `ROADMAP.md` pour le détail et
+  ce qui reste, hors scope v1) : depuis le menu (`E`), un sélecteur
+  (`pick_hole_to_build`, `tui::HolePickerView`) propose "+ Nouveau trou" ou
+  un fichier `.course` existant trouvé sous `courses/*/`
+  (`discover_hole_files`, testée — inclut `courses/_library/`). Pour un
+  trou neuf, un en-tête minimal (par obligatoire, orientation) suggère une
+  taille de grille (`suggested_declared_size`), puis le trou se dessine
+  entièrement au clavier dans `BuilderState`
   (`src/main.rs`) — taper un caractère de terrain valide peint la case et
   avance automatiquement le curseur (ligne par ligne ou colonne par
   colonne selon l'orientation), les flèches déplacent librement, `U`
@@ -294,15 +298,22 @@ Fait et testé :
   `BuilderState::exit_confirm` — et n'importe quelle touche autre qu'un
   deuxième `Échap` annule, y compris `S` qui bascule normalement vers la
   sauvegarde (permet donc de sauvegarder le travail en cours avant de
-  sortir, sans logique dédiée). Ne charge pas encore un fichier
-  existant pour modification/duplication (reste à faire, phase 9).
+  sortir, sans logique dédiée). Charger un fichier existant (choisi dans
+  le sélecteur) propose "Modifier" (réécrit directement ce fichier — `S`
+  saute alors la saisie de nom et `ConfirmOverwrite`) ou "Dupliquer"
+  (comportement d'un trou neuf, nom demandé à chaque sauvegarde). L'état
+  d'édition est reconstruit par `BuilderState::from_existing_hole`
+  (testée) à partir de `Hole::local_tiles()` (testée, réutilisée aussi par
+  `to_course_string` — élimine une duplication de calcul d'offset qui
+  existait entre les deux), l'orientation étant déduite du rapport
+  largeur/hauteur de la grille chargée.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 34 tests unitaires dans
-  `src/main.rs` (75 au total avec `core`), mais rien qui simule un vrai
+  `adjust_die_strength`...) a maintenant 38 tests unitaires dans
+  `src/main.rs` (81 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io

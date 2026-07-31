@@ -18,6 +18,7 @@ pub mod sidebar;
 
 pub use builder::{
     BuilderHeaderView, BuilderMode, BuilderOrientation, BuilderSetupView, BuilderView,
+    HolePickerView,
 };
 pub use lang::Lang;
 pub use menu::CourseMenuState;
