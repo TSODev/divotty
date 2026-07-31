@@ -1208,15 +1208,32 @@ fn setup_builder<B: ratatui::backend::Backend>(
     let mut orientation = BuilderOrientation::Horizontal;
 
     loop {
+        let grid_size = suggested_declared_size(par, orientation);
+        // Aperçu de la grille vierge à la taille suggérée, dans le même
+        // esprit "liste/formulaire à gauche, aperçu visuel à droite" que
+        // le reste du builder plutôt qu'un unique panneau plein écran.
+        let (w, h) = grid_size;
+        let blank_tiles = vec![vec![TerrainKind::OutOfBounds; w]; h];
+
         terminal.draw(|frame| {
+            let columns = Layout::default()
+                .direction(LayoutDirection::Horizontal)
+                .constraints([Constraint::Length(30), Constraint::Min(0)])
+                .split(frame.size());
+
             frame.render_widget(
-                BuilderSetupView {
-                    lang: *lang,
-                    par,
-                    orientation,
-                    grid_size: suggested_declared_size(par, orientation),
+                BuilderSetupView { lang: *lang, par, orientation, grid_size },
+                columns[0],
+            );
+
+            frame.render_widget(
+                BuilderView {
+                    tiles: &blank_tiles,
+                    cursor: None,
+                    viewport_w: columns[1].width.saturating_sub(2) as usize,
+                    viewport_h: columns[1].height.saturating_sub(2) as usize,
                 },
-                frame.size(),
+                columns[1],
             );
         })?;
 

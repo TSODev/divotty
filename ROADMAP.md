@@ -495,21 +495,34 @@
          largeur (en-tête au-dessus, grille en dessous) à une colonne
          gauche/droite comme le jeu (`tui::SidebarState`) — sidebar à
          gauche (`tui::BuilderSidebarView`, largeur 28 comme en jeu), grille
-         à droite. Trois panneaux empilés, réutilisant les helpers de style
-         de la sidebar du jeu (`panel`/`panel_bottom_aligned`/`SIDEBAR_BG`
-         dans `sidebar.rs`, passés de privés à `pub(crate)` pour ce
-         partage) : "Hole" (nom/par/orientation), "Position" (x/y +
+         à droite. Quatre panneaux empilés, réutilisant les helpers de
+         style de la sidebar du jeu (`panel`/`panel_bottom_aligned`/
+         `SIDEBAR_BG` dans `sidebar.rs`, passés de privés à `pub(crate)`
+         pour ce partage) : "Hole" (nom/par/orientation), "Position" (x/y +
          ligne/colonne courante, avec l'avertissement de fin de grille déjà
-         en place), "Controls" (aide clavier ou saisie en cours, alignée en
-         bas comme le panneau Contrôles du jeu). La légende des terrains
-         n'est plus affichée en permanence dans cette colonne étroite
-         (~24 caractères utiles, contre ~110 pour la légende complète sur
-         une seule ligne) — déplacée dans `BuilderSetupView`, qui a toute
-         la largeur de l'écran. Les messages de sauvegarde/erreur, trop
-         longs eux aussi pour une seule ligne étroite, sont désormais
-         découpés à la limite des mots (`wrap_text`, testée) plutôt que
-         tronqués à mi-mot — repéré en testant visuellement le premier
-         jet, corrigé dans la foulée.
+         en place), "Legend" (légende des terrains), "Controls" (aide
+         clavier ou saisie en cours, alignée en bas comme le panneau
+         Contrôles du jeu). Les messages de sauvegarde/erreur, trop longs
+         pour une seule ligne dans une colonne étroite, sont découpés à la
+         limite des mots (`wrap_text`, testée) plutôt que tronqués à
+         mi-mot.
+
+         **Corrections après un premier jet jugé pas encore satisfaisant** :
+         un premier découpage avait retiré la légende de la sidebar de
+         dessin (déplacée dans l'écran d'en-tête, qui restait alors un
+         unique panneau plein écran, incohérent avec le reste du flux à
+         deux colonnes) — signalé, corrigé sur les deux points à la fois :
+         (1) la légende revient dans la sidebar de dessin, sous forme d'un
+         panneau dédié "Legend" (`terrain_legend_lines`, deux entrées par
+         ligne pour tenir dans les ~24 caractères utiles d'une colonne
+         étroite, contre ~110 pour la légende complète sur une seule
+         ligne) ; (2) l'écran d'en-tête (`BuilderSetupView`) devient lui
+         aussi deux colonnes — formulaire (par/orientation/taille
+         suggérée/contrôles) à gauche, aperçu de la grille vierge à la
+         taille suggérée à droite (même `BuilderView` réutilisé en lecture
+         seule que pour l'aperçu du sélecteur) — cohérent avec les deux
+         autres écrans du builder plutôt qu'un panneau isolé au milieu du
+         flux.
       10. *(Plus tard, hors scope v1)* Estimation des longueurs de coup
           pendant l'édition, en réutilisant `core::preview_shot` depuis la
           position du curseur — utile pour doser bunkers/rough/eau, mais

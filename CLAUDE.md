@@ -328,14 +328,20 @@ Fait et testé :
   la logique de rendu. Généralisation ensuite à tout le builder : l'écran
   de dessin (`run_builder`) est passé d'un bandeau plein largeur à une
   colonne gauche (`tui::BuilderSidebarView`, largeur 28 comme la sidebar du
-  jeu) / grille à droite — trois panneaux ("Hole", "Position", "Controls")
-  réutilisant les helpers de style de `sidebar.rs` (`panel`/
+  jeu) / grille à droite — quatre panneaux ("Hole", "Position", "Legend",
+  "Controls") réutilisant les helpers de style de `sidebar.rs` (`panel`/
   `panel_bottom_aligned`/`SIDEBAR_BG`, passés de privés à `pub(crate)`).
-  La légende des terrains, trop large (~110 caractères) pour cette colonne
-  étroite, est déplacée dans `BuilderSetupView` (pleine largeur). Les
-  messages de sauvegarde/erreur sont découpés à la limite des mots
-  (`wrap_text`, testée) plutôt que tronqués à mi-mot dans la colonne
-  étroite.
+  Un premier jet avait retiré la légende de cette colonne (déplacée dans
+  l'écran d'en-tête, resté alors un unique panneau plein écran) — signalé
+  comme pas satisfaisant, corrigé : la légende revient dans la sidebar de
+  dessin via un panneau "Legend" dédié (`terrain_legend_lines`, deux
+  entrées de terrain par ligne pour tenir dans la colonne étroite), et
+  l'écran d'en-tête (`BuilderSetupView`) devient lui aussi deux colonnes —
+  formulaire à gauche, aperçu de la grille vierge à la taille suggérée à
+  droite (même `BuilderView` en lecture seule que l'aperçu du sélecteur) —
+  cohérent avec les deux autres écrans du builder. Les messages de
+  sauvegarde/erreur sont découpés à la limite des mots (`wrap_text`,
+  testée) plutôt que tronqués à mi-mot dans la colonne étroite.
 - Répertoire de données résolu (`resolve_data_root()`/
   `resolve_data_root_from()`, testée, voir principe directeur ci-dessus) :
   `courses/`, `save.yaml` et `courses/_library/` suivent tous la même

@@ -6,7 +6,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction as LayoutDirection, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Widget},
 };
 use std::path::{Path, PathBuf};
@@ -73,27 +73,6 @@ fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
     }
 }
 
-/// Comme `write_line`, mais chaque segment garde son propre style — utilisé
-/// pour la légende de terrain, où chaque entrée doit reprendre la couleur
-/// exacte de son terrain sur la carte (`terrain_style` dans `render.rs`)
-/// plutôt qu'une seule couleur uniforme pour toute la ligne.
-fn write_spans(buf: &mut Buffer, area: Rect, y: u16, segments: &[(String, Style)]) {
-    if y >= area.y + area.height {
-        return;
-    }
-    let mut x = area.x;
-    let max_x = area.x + area.width;
-    for (text, style) in segments {
-        for ch in text.chars() {
-            if x >= max_x {
-                return;
-            }
-            buf.get_mut(x, y).set_char(ch).set_style(*style);
-            x += 1;
-        }
-    }
-}
-
 /// Découpe `text` en lignes d'au plus `width` caractères, à la limite des
 /// mots — utilisé pour les messages de sauvegarde/erreur dans le panneau
 /// Contrôles de `BuilderSidebarView`, trop étroit (~24 caractères utiles)
@@ -118,10 +97,13 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-/// Petit écran d'en-tête avant de dessiner un nouveau trou : le par visé
-/// (seul champ obligatoire) et l'orientation, qui ensemble suggèrent une
-/// taille de grille cohérente avec les distances de club calibrées ailleurs
-/// dans le projet (voir `tools/make_hole_canvas.py`).
+/// Panneau de gauche avant de dessiner un nouveau trou : le par visé (seul
+/// champ obligatoire) et l'orientation, qui ensemble suggèrent une taille
+/// de grille cohérente avec les distances de club calibrées ailleurs dans
+/// le projet (voir `tools/make_hole_canvas.py`). Affiché à côté d'un aperçu
+/// de la grille vierge à cette taille (voir `setup_builder` dans
+/// `main.rs`, qui construit ce second panneau) — même esprit deux colonnes
+/// que le reste du builder plutôt qu'un unique panneau plein écran.
 pub struct BuilderSetupView {
     pub lang: Lang,
     pub par: u8,
@@ -132,59 +114,70 @@ pub struct BuilderSetupView {
 impl Widget for BuilderSetupView {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = match self.lang {
-            Lang::En => "New hole — setup",
-            Lang::Fr => "Nouveau trou — en-tête",
+            Lang::En => "New hole",
+            Lang::Fr => "Nouveau trou",
         };
-        let block = Block::default().borders(Borders::ALL).title(title);
-        let inner = block.inner(area);
-        block.render(area, buf);
-
         let (w, h) = self.grid_size;
-        let lines = [
-            match self.lang {
-                Lang::En => format!("Par: {}   (up/down to change)", self.par),
-                Lang::Fr => format!("Par : {}   (haut/bas pour changer)", self.par),
-            },
-            match self.lang {
-                Lang::En => format!(
-                    "Orientation: {}   (left/right to change)",
-                    self.orientation.label(self.lang)
-                ),
-                Lang::Fr => format!(
-                    "Orientation : {}   (gauche/droite pour changer)",
-                    self.orientation.label(self.lang)
-                ),
-            },
-            match self.lang {
-                Lang::En => format!("Suggested grid: {w}x{h} cells"),
-                Lang::Fr => format!("Grille suggérée : {w}x{h} cases"),
-            },
-            String::new(),
-            match self.lang {
-                Lang::En => "Enter: start drawing    Esc: back to menu    L: language".to_string(),
-                Lang::Fr => "Entrée : dessiner    Échap : retour menu    L : langue".to_string(),
-            },
-        ];
-        for (i, line) in lines.iter().enumerate() {
-            write_line(
-                buf,
-                inner,
-                inner.y + i as u16,
-                line,
+        let lines = vec![
+            Line::styled(
+                match self.lang {
+                    Lang::En => format!("Par: {}", self.par),
+                    Lang::Fr => format!("Par : {}", self.par),
+                },
                 Style::default().fg(Color::White),
-            );
-        }
-
-        // Légende affichée ici plutôt que dans la sidebar de l'écran de
-        // dessin (`BuilderSidebarView`) : une seule ligne complète fait
-        // ~110 caractères, bien trop pour une colonne de ~28 — cet écran a
-        // toute la largeur du terminal pour lui, donc de la place à revendre.
-        write_spans(
-            buf,
-            inner,
-            inner.y + lines.len() as u16 + 1,
-            &terrain_legend_segments(self.lang),
-        );
+            ),
+            Line::styled(
+                match self.lang {
+                    Lang::En => format!("Orientation: {}", self.orientation.label(self.lang)),
+                    Lang::Fr => format!("Orientation : {}", self.orientation.label(self.lang)),
+                },
+                Style::default().fg(Color::White),
+            ),
+            Line::styled(
+                match self.lang {
+                    Lang::En => format!("Grid: {w}x{h}"),
+                    Lang::Fr => format!("Grille : {w}x{h}"),
+                },
+                Style::default().fg(Color::White),
+            ),
+            Line::from(""),
+            Line::styled(
+                match self.lang {
+                    Lang::En => "Up/Down  change par",
+                    Lang::Fr => "Haut/Bas  changer par",
+                },
+                Style::default().fg(Color::Gray),
+            ),
+            Line::styled(
+                match self.lang {
+                    Lang::En => "Left/Right  orientation",
+                    Lang::Fr => "Gauche/Droite  orientation",
+                },
+                Style::default().fg(Color::Gray),
+            ),
+            Line::styled(
+                match self.lang {
+                    Lang::En => "Enter  start drawing",
+                    Lang::Fr => "Entrée  dessiner",
+                },
+                Style::default().fg(Color::Gray),
+            ),
+            Line::styled(
+                match self.lang {
+                    Lang::En => "Esc  back to menu",
+                    Lang::Fr => "Échap  retour menu",
+                },
+                Style::default().fg(Color::Gray),
+            ),
+            Line::styled(
+                match self.lang {
+                    Lang::En => "L  language",
+                    Lang::Fr => "L  langue",
+                },
+                Style::default().fg(Color::Gray),
+            ),
+        ];
+        panel(area, buf, title, HOLE_ACCENT, lines);
     }
 }
 
@@ -335,12 +328,14 @@ impl<'a> Widget for HolePreviewView<'a> {
     }
 }
 
-/// Légende de terrain sous forme de segments colorés, un par
-/// `TerrainKind`, chacun repris avec la couleur exacte que ce terrain
-/// affiche sur la carte (`terrain_style` dans `render.rs`) plutôt qu'une
-/// seule couleur uniforme — pour que la légende serve aussi de repère
-/// visuel cohérent avec ce que le joueur voit en dessinant.
-fn terrain_legend_segments(lang: Lang) -> Vec<(String, Style)> {
+/// Légende de terrain sous forme de lignes prêtes pour un panneau
+/// (`panel`/`panel_bottom_aligned` dans `sidebar.rs`) — deux entrées par
+/// ligne pour tenir dans une colonne étroite (~28 caractères, contre ~110
+/// pour toute la légende sur une seule ligne). Chaque entrée reprend la
+/// couleur exacte de son terrain sur la carte (`terrain_style` dans
+/// `render.rs`) plutôt qu'une seule couleur uniforme, pour que la légende
+/// serve aussi de repère visuel cohérent avec ce que le joueur dessine.
+fn terrain_legend_lines(lang: Lang) -> Vec<Line<'static>> {
     const ITEMS: [(TerrainKind, &str, &str); 10] = [
         (TerrainKind::Tee, "tee", "départ"),
         (TerrainKind::Fairway, "fairway", "fairway"),
@@ -354,32 +349,38 @@ fn terrain_legend_segments(lang: Lang) -> Vec<(String, Style)> {
         (TerrainKind::OutOfBounds, "OOB", "hors-limites"),
     ];
     let separator = Style::default().fg(Color::DarkGray);
-    let mut segments = Vec::with_capacity(ITEMS.len() * 2 + 1);
-    for (i, (kind, label_en, label_fr)) in ITEMS.into_iter().enumerate() {
-        if i > 0 {
-            segments.push((" ".to_string(), separator));
-        }
-        let (_, color) = terrain_style(kind);
-        let key = kind.to_char();
-        let key_display = match (key, lang) {
-            (' ', Lang::En) => "(space)".to_string(),
-            (' ', Lang::Fr) => "(espace)".to_string(),
-            (c, _) => c.to_string(),
-        };
-        let label = if lang == Lang::En { label_en } else { label_fr };
-        segments.push((
-            format!("{key_display}={label}"),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        ));
-    }
-    segments.push((
+    let mut lines: Vec<Line<'static>> = ITEMS
+        .chunks(2)
+        .map(|chunk| {
+            let mut spans = Vec::with_capacity(3);
+            for (i, (kind, label_en, label_fr)) in chunk.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::styled(" ", separator));
+                }
+                let (_, color) = terrain_style(*kind);
+                let key = kind.to_char();
+                let key_display = match (key, lang) {
+                    (' ', Lang::En) => "(sp)".to_string(),
+                    (' ', Lang::Fr) => "(esp)".to_string(),
+                    (c, _) => c.to_string(),
+                };
+                let label = if lang == Lang::En { label_en } else { label_fr };
+                spans.push(Span::styled(
+                    format!("{key_display}={label}"),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect();
+    lines.push(Line::styled(
         match lang {
-            Lang::En => "  — letters case-insensitive".to_string(),
-            Lang::Fr => "  — lettres insensibles à la casse".to_string(),
+            Lang::En => "letters case-insensitive",
+            Lang::Fr => "lettres insensibles casse",
         },
         separator,
     ));
-    segments
+    lines
 }
 
 /// Nombre de lignes/colonnes restantes avant que l'avancée automatique de la
@@ -390,6 +391,7 @@ const NEAR_END_THRESHOLD: usize = 3;
 
 const HOLE_ACCENT: Color = Color::LightGreen;
 const POSITION_ACCENT: Color = Color::Cyan;
+const LEGEND_ACCENT: Color = Color::Yellow;
 const CONTROLS_ACCENT: Color = Color::DarkGray;
 
 fn bold(color: Color) -> Style {
@@ -399,13 +401,12 @@ fn bold(color: Color) -> Style {
 /// Colonne de gauche pendant le dessin d'un trou (voir `run_builder` dans
 /// `main.rs`) — même esprit que la sidebar du jeu (`tui::SidebarState`) :
 /// plusieurs petits panneaux empilés plutôt qu'un seul bandeau, la carte
-/// occupant la colonne de droite. Trois panneaux : "Hole" (nom/par/
+/// occupant la colonne de droite. Quatre panneaux : "Hole" (nom/par/
 /// orientation), "Position" (x/y + progression dans le sens de l'avancée
-/// automatique), "Controls" (aide clavier ou saisie en cours, alignée en
-/// bas comme le panneau Contrôles du jeu). La légende des terrains n'est
-/// plus affichée en permanence ici — une seule ligne complète fait ~110
-/// caractères, bien trop pour une colonne de ~28 — déplacée dans
-/// `BuilderSetupView`, qui a toute la largeur de l'écran pour elle.
+/// automatique), "Legend" (légende des terrains, deux entrées par ligne
+/// pour tenir dans la colonne — voir `terrain_legend_lines`), "Controls"
+/// (aide clavier ou saisie en cours, alignée en bas comme le panneau
+/// Contrôles du jeu).
 pub struct BuilderSidebarView<'a> {
     pub lang: Lang,
     pub name: &'a str,
@@ -430,7 +431,12 @@ impl<'a> Widget for BuilderSidebarView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let chunks = Layout::default()
             .direction(LayoutDirection::Vertical)
-            .constraints([Constraint::Length(5), Constraint::Length(4), Constraint::Min(0)])
+            .constraints([
+                Constraint::Length(5),
+                Constraint::Length(4),
+                Constraint::Length(8),
+                Constraint::Min(0),
+            ])
             .split(area);
 
         let hole_title = match self.lang {
@@ -516,6 +522,12 @@ impl<'a> Widget for BuilderSidebarView<'a> {
             Line::styled(progress_line, progress_style),
         ];
         panel(chunks[1], buf, position_title, POSITION_ACCENT, position_lines);
+
+        let legend_title = match self.lang {
+            Lang::En => "Legend",
+            Lang::Fr => "Légende",
+        };
+        panel(chunks[2], buf, legend_title, LEGEND_ACCENT, terrain_legend_lines(self.lang));
 
         let controls_title = match self.lang {
             Lang::En => "Controls",
@@ -606,7 +618,7 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                     .map(|l| Line::styled(l.to_string(), Style::default().fg(Color::Gray))),
             );
         }
-        panel_bottom_aligned(chunks[2], buf, controls_title, CONTROLS_ACCENT, controls_lines);
+        panel_bottom_aligned(chunks[3], buf, controls_title, CONTROLS_ACCENT, controls_lines);
     }
 }
 
