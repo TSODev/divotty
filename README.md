@@ -23,15 +23,17 @@ divotty/
 │   │   └── scoring.rs        # per-hole score / scorecard (semantic labels, no display text)
 │   └── tui/             # ratatui rendering module
 │       ├── mod.rs
-│       ├── render.rs      # course view, viewport following the ball + dispersion preview
+│       ├── render.rs      # course view, viewport following the ball, shot preview + end-of-hole path recap
 │       ├── sidebar.rs      # info column (title, hole, score, club, last shot, aim, controls)
 │       ├── menu.rs          # course selection screen
-│       ├── lang.rs           # display language (English by default, French toggle)
-│       └── format.rs          # shared display helpers (difficulty stars...)
+│       ├── scorecard.rs      # end-of-round scorecard screen (every hole, par/strokes/label, total)
+│       ├── lang.rs             # display language (English by default, French toggle)
+│       └── format.rs            # shared display helpers (difficulty stars, compass arrows...)
 └── courses/
-    └── demo/            # example course (1 hole)
-        ├── course.yaml     # course index (name, difficulty, hole order)
-        └── hole_01.course  # a hole: YAML frontmatter + ASCII grid
+    ├── demo/            # example course (1 hole)
+    │   ├── course.yaml     # course index (name, difficulty, hole order)
+    │   └── hole_01.course  # a hole: YAML frontmatter + ASCII grid
+    └── quick3/          # a 3-hole course (par 3/4/5) for exercising multi-hole chaining
 ```
 
 ## Running the game
@@ -92,6 +94,17 @@ can't go below 3 (any lower would make even a Putter nearly unable to
 reach the hole) and resets to full whenever you change club or start a
 new hole, so it's a per-shot fine-tune rather than a standing preference.
 
+Putting rewards a good approach shot: the Putter's accuracy scales with
+how close the ball already is to the hole, so a short putt is close to
+automatic while a long lag putt stays a real gamble. A ball hit into
+water or out of bounds no longer resets all the way back to where the
+shot was played from — it backtracks along the shot's own path and drops
+at the last safe spot before the hazard (hopping over a tree if there's
+one in the way), still costing the usual penalty stroke. Once you hole
+out, the map swaps the aim preview for a recap of the whole hole: a red
+ball at each stop the ball made along the way, connected by a trail of
+yellow balls from tee to cup.
+
 ## `.course` file format
 
 A hole is a YAML frontmatter (`name`, `par`, optional `description`)
@@ -129,14 +142,18 @@ See `courses/demo/` for a complete, working example.
 ## Current state
 
 Shot resolution engine tested (dice + club + terrain + seedable random
-dispersion, per-club terrain sensitivity, obstacle fly-over, wind drift),
-club distances calibrated as realistic ratios of the Driver, course parser
-validated with unit tests, range/dispersion preview before playing,
-two-column multilingual UI (English/French) with an optional map zoom,
-course selection menu with difficulty displayed, save/resume, and a proper
-end-of-hole state (replay or back to menu). Multi-hole chaining and a full
-scorecard aren't in yet. See `ROADMAP.md` for what's next, `CHANGELOG.md`
-for release history, and `CLAUDE.md` for handoff context.
+dispersion, per-club terrain sensitivity, distance-scaled putting
+precision, obstacle fly-over, wind drift, a backtracking drop on
+water/out-of-bounds), club distances calibrated as realistic ratios of the
+Driver, course parser validated with unit tests, range/dispersion preview
+before playing, two-column multilingual UI (English/French) with an
+optional map zoom, course selection menu with difficulty displayed,
+save/resume, full multi-hole chaining with a complete end-of-round
+scorecard, and a proper end-of-hole state (next hole, replay, or back to
+menu). `cargo install divotty` works standalone: the demo and Quick 3
+courses are embedded in the binary as a fallback if `courses/` isn't found
+on disk. See `ROADMAP.md` for what's next, `CHANGELOG.md` for release
+history, and `CLAUDE.md` for handoff context.
 
 ## License
 

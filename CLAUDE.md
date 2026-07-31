@@ -150,7 +150,16 @@ Fait et testé :
 - Aperçu de coup avant de jouer : `preview_shot` calcule portée min/max/
   moyenne (dé 1/6/4) et rayon de dispersion sans consommer de RNG ; `tui`
   superpose un guide en pointillés, une zone de dispersion (magenta) et un
-  repère `✛` sur la carte.
+  repère `✛` sur la carte. Volontairement sans vent (voir plus bas). En
+  zoom, la balle et le trou n'occupent qu'une seule sous-case du bloc
+  zoomé (terrain réel/cadre `╭─╮│⚑│╰─╯` autour) plutôt que de le remplir
+  en entier, avec une flèche de visée près de la balle et des points de
+  guide en petits segments de 3 (horizontal/vertical/diagonal) plutôt que
+  des points isolés — détail complet dans `ROADMAP.md` (v0.3).
+- Putting moins aléatoire : la dispersion du Putter dépend désormais de la
+  distance restante au trou (`putter_base_dispersion()` dans `shot.rs`) —
+  un putt court est quasi automatique, un long putt garde son plein
+  risque. Seul le Putter est concerné.
 - Résolution de coup avec dé + club + terrain + dispersion aléatoire,
   déterministe sous seed fixe.
 - Interface deux colonnes : sidebar à gauche (7 panneaux empilés), carte à
@@ -165,9 +174,13 @@ Fait et testé :
   jouer.
 - Sauvegarde/reprise d'une partie en cours : `S` sauvegarde dans
   `save.yaml` (dossier du parcours, numéro de trou, coups, position de
-  balle, club, direction visée) ; le menu propose `[C]` pour reprendre si
-  un fichier de sauvegarde existe. Le parcours de secours généré en mémoire
-  (fallback sans dossier) n'est pas sauvegardable.
+  balle, vent, club, direction visée, plafond de dé, scorecard cumulé) ; le
+  menu propose `[C]` pour reprendre si un fichier de sauvegarde existe. Un
+  parcours sans dossier associé (`course_dir: None` — les parcours
+  embarqués, voir plus bas) n'est pas sauvegardable. L'historique des
+  points d'arrêt du trou courant (`shot_history`, voir plus bas) n'est
+  volontairement pas persisté : une reprise repart avec un historique
+  limité à la position actuelle.
 - Quitter nécessite une double pression sur `q` (`qq`), au menu comme en
   jeu — un indice "Press q again to quit" s'affiche après la première
   pression, annulé par toute autre touche.
@@ -212,18 +225,32 @@ Fait et testé :
   retirée, et certains noms de terrain (FR "une zone à pénalité") auraient
   rendu une formulation plus longue tronquée — vérifié dans le terminal,
   pas juste en théorie.
+- Rappel visuel du parcours une fois le trou terminé : `GameState.
+  shot_history` (`Vec<Pos>`, départ inclus, complété après chaque coup,
+  remis à `[tee]` sur `restart_hole`/`advance_hole`) donne à
+  `CourseView::path` la liste des arrêts. Remplace l'aperçu de visée
+  (`preview`, mis à `None` une fois fini) par une balle rouge à chaque
+  arrêt intermédiaire et un pointillé de balles jaunes reliant les points
+  consécutifs, du départ au trou.
+- Les 7 panneaux de la sidebar ont un fond vert sombre partagé
+  (`SIDEBAR_BG` dans `sidebar.rs`, clin d'œil golf) plutôt que le noir par
+  défaut du terminal, et une amorce colorée (`▏`, `prefix_line()`) entre
+  la bordure gauche et le texte de chaque ligne — y compris les lignes
+  vides du panneau Contrôles, pour que l'accent forme une "colonne"
+  visible sur toute la hauteur du panneau. Le panneau Titre n'a plus de
+  libellé de bordure ("Divotty"), juste l'icône + version à l'intérieur.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 15 tests unitaires dans
-  `src/main.rs` (49 au total avec `core`), mais rien qui simule un vrai
+  `adjust_die_strength`...) a maintenant 17 tests unitaires dans
+  `src/main.rs` (51 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io
 
-Fait : `divotty` v0.1.0 est publié sur crates.io
+Fait : `divotty` v0.2.0 est publié sur crates.io
 (https://crates.io/crates/divotty), installable via `cargo install
 divotty`. Compte crates.io authentifié en local (`cargo login` fait,
 credentials dans `~/.cargo/credentials.toml`).
