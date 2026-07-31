@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Putting is less of a coin flip now: the Putter's accuracy improves the
+  closer the ball already is to the hole, instead of a fixed dispersion
+  regardless of distance. A short putt left by a good approach shot is
+  now close to a sure thing (like a real-golf gimme); a long lag putt
+  stays a genuine risk. Every other club is unaffected.
+
 ## [0.2.0] - 2026-07-31
 
 ### Added

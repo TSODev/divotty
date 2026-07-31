@@ -149,6 +149,32 @@ fn effective_dispersion(base_dispersion: f32, dispersion_mult: f32, terrain_sens
     base_dispersion * (1.0 + terrain_effect).max(0.0)
 }
 
+/// Distance euclidienne (en cases) entre deux positions.
+fn distance_between(a: Pos, b: Pos) -> f32 {
+    let dx = a.x as f32 - b.x as f32;
+    let dy = a.y as f32 - b.y as f32;
+    (dx * dx + dy * dy).sqrt()
+}
+
+/// Distance de putt (en cases) au-delà de laquelle le Putter garde sa
+/// dispersion de base pleine (`Club::Putter.base_dispersion()`, 0.2) —
+/// en-deçà, elle décroît linéairement jusqu'à ~0 pour un tap-in. Nettement
+/// au-delà de la portée max d'un seul coup de Putter (dé=6 → 3.0 cases) :
+/// un putt isolé loin du trou garde donc son plein risque, seule la
+/// approche finale (déjà bien placée) devient quasi automatique.
+const PUTTER_PRECISION_RANGE: f32 = 10.0;
+
+/// Dispersion de base du Putter, réduite selon la distance restante au
+/// trou plutôt que fixe : un putt court (bien placé par un bon coup
+/// d'approche) devient quasi automatique, comme un "gimme" au golf réel,
+/// tandis qu'un long putt reste un vrai pari — récompense la qualité de
+/// l'approche plutôt qu'un tirage indépendant de la situation. Seul le
+/// Putter a ce régime ; les autres clubs gardent une dispersion fixe.
+fn putter_base_dispersion(distance_to_hole: f32) -> f32 {
+    let factor = (distance_to_hole / PUTTER_PRECISION_RANGE).clamp(0.0, 1.0);
+    Club::Putter.base_dispersion() * factor
+}
+
 /// Fraction du vol pendant laquelle la balle est trop basse pour survoler un
 /// obstacle (arbre...). Au-delà, on considère qu'elle a pris assez
 /// d'altitude pour passer par-dessus. Principe volontairement simple : un
@@ -247,11 +273,17 @@ pub fn preview_shot(
 
     let expected_die = ((1 + die_strength) as f32 / 2.0).round() as u8;
 
+    let base_dispersion = if club == Club::Putter {
+        putter_base_dispersion(distance_between(from, hole.hole_pos))
+    } else {
+        club.base_dispersion()
+    };
+
     ShotPreview {
         max_landing: landing_for_die(die_strength),
         expected_landing: landing_for_die(expected_die),
         dispersion_radius: effective_dispersion(
-            club.base_dispersion(),
+            base_dispersion,
             profile.dispersion_mult,
             club.terrain_sensitivity(),
         ),
@@ -270,8 +302,13 @@ pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, wind: Wind, rng: &mut im
     let base_distance = shot.club.base_distance(shot.die_roll);
     let effective_distance = base_distance * profile.distance_mult;
 
+    let base_dispersion = if shot.club == Club::Putter {
+        putter_base_dispersion(distance_between(from, hole.hole_pos))
+    } else {
+        shot.club.base_dispersion()
+    };
     let effective_dispersion = effective_dispersion(
-        shot.club.base_dispersion(),
+        base_dispersion,
         profile.dispersion_mult,
         shot.club.terrain_sensitivity(),
     );
@@ -507,6 +544,72 @@ mod tests {
         assert_eq!(
             capped.dispersion_radius, full.dispersion_radius,
             "le plafond de dé ne doit pas affecter la dispersion, seulement la distance"
+        );
+    }
+
+    #[test]
+    fn putter_dispersion_shrinks_near_the_hole() {
+        let hole = flat_fairway_hole();
+        let direction = Direction { dx: 1.0, dy: 0.0 };
+
+        let close = preview_shot(
+            &hole,
+            Pos { x: hole.hole_pos.x - 1, y: hole.hole_pos.y },
+            Club::Putter,
+            direction,
+            6,
+        );
+        let far = preview_shot(
+            &hole,
+            Pos { x: hole.hole_pos.x - 20, y: hole.hole_pos.y },
+            Club::Putter,
+            direction,
+            6,
+        );
+
+        assert!(
+            close.dispersion_radius < far.dispersion_radius,
+            "un putt proche du trou doit être plus précis qu'un long putt"
+        );
+        assert!(
+            close.dispersion_radius < 0.05,
+            "un tap-in (1 case) doit être quasi automatique, obtenu {}",
+            close.dispersion_radius
+        );
+    }
+
+    #[test]
+    fn putter_dispersion_caps_at_the_base_value_beyond_the_precision_range() {
+        let hole = flat_fairway_hole();
+        let direction = Direction { dx: 1.0, dy: 0.0 };
+
+        // Bien au-delà de PUTTER_PRECISION_RANGE (10 cases) : la dispersion
+        // ne doit pas continuer à grandir indéfiniment, elle plafonne à la
+        // dispersion de base du Putter.
+        let far = preview_shot(&hole, Pos { x: 0, y: hole.hole_pos.y }, Club::Putter, direction, 6);
+        let very_far = preview_shot(&hole, Pos { x: 0, y: 0 }, Club::Putter, direction, 6);
+
+        assert_eq!(far.dispersion_radius, Club::Putter.base_dispersion());
+        assert_eq!(very_far.dispersion_radius, Club::Putter.base_dispersion());
+    }
+
+    #[test]
+    fn other_clubs_dispersion_is_unaffected_by_distance_to_hole() {
+        let hole = flat_fairway_hole();
+        let direction = Direction { dx: 1.0, dy: 0.0 };
+
+        let close = preview_shot(
+            &hole,
+            Pos { x: hole.hole_pos.x - 1, y: hole.hole_pos.y },
+            Club::Driver,
+            direction,
+            6,
+        );
+        let far = preview_shot(&hole, Pos { x: 0, y: 0 }, Club::Driver, direction, 6);
+
+        assert_eq!(
+            close.dispersion_radius, far.dispersion_radius,
+            "seul le Putter a une dispersion qui dépend de la distance au trou"
         );
     }
 

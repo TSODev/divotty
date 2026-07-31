@@ -134,13 +134,20 @@
       chaque changement de club (choix délibéré : réglage fin pour le
       club/trou courant, pas une préférence durable) — voir
       `GameState::adjust_die_strength` dans `main.rs`.
-- [ ] Rendre le putting moins aléatoire — à concevoir maintenant que le
-      zoom rend la zone du green lisible. Actuellement `Club::Putter` a la
-      dispersion la plus faible (0.2) mais reste un simple tirage aléatoire
-      comme les autres clubs ; pistes à explorer : réduire encore la
-      dispersion résiduelle, introduire un facteur de "précision" lié à la
-      distance restante, ou un mini-mécanisme moins purement RNG (pas encore
-      tranché).
+- [x] Rendre le putting moins aléatoire — dispersion du Putter désormais
+      fonction de la distance restante au trou plutôt qu'une constante fixe
+      (`putter_base_dispersion()` dans `shot.rs`) : un putt court (bien
+      placé par un bon coup d'approche) devient quasi automatique, comme un
+      "gimme" au golf réel, tandis qu'un long putt (>`PUTTER_PRECISION_RANGE`,
+      10 cases — nettement au-delà de la portée max d'un seul coup de
+      Putter, 3.0 cases) garde son plein risque. Récompense la qualité de
+      l'approche plutôt qu'un tirage indépendant de la situation, cohérent
+      avec la direction déjà prise (vent, force du coup). Seul le Putter est
+      concerné ; les autres clubs gardent une dispersion fixe (testé).
+      Piste écartée pour l'instant : un vrai mini-mécanisme d'input dédié
+      (jauge de précision, etc.) — trop de complexité ajoutée pour un seul
+      club, alors que ce changement reste une petite formule sur la
+      dispersion existante.
 - [ ] Pente sur le green (idée candidate pour l'item ci-dessus) : une
       indication d'altitude par case du green qui dévie la trajectoire du
       putt de façon **déterministe** (vers la pente descendante) plutôt que
@@ -313,8 +320,9 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
 - [ ] Sons/feedback terminal (bell, ou intégration `cpal` optionnelle)
 - [ ] Thème de couleurs configurable
 - [ ] Parcours à 18 trous complet et équilibré
-- [x] Publication sur crates.io — `divotty` v0.1.0 en ligne,
-      `cargo install divotty` fonctionnel (voir `CLAUDE.md`)
+- [x] Publication sur crates.io — `divotty` v0.2.0 en ligne,
+      `cargo install divotty` fonctionnel, y compris les vrais parcours
+      embarqués (voir `CLAUDE.md`)
 
 ## Idées non priorisées
 - Mode multijoueur local (tour par tour, même terminal)
