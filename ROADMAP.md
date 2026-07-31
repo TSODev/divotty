@@ -476,7 +476,40 @@
          un trou existant se charge, se modifie, se sauvegarde en place
          sans écraser un autre fichier (dupliqué au préalable pour tester
          sans risque sur le vrai trou de démo) et un trou neuf reste
-         accessible normalement depuis le même sélecteur.
+         accessible normalement depuis le même sélecteur. Écran ensuite
+         scindé en deux colonnes (comme le jeu : sidebar/carte) — la liste
+         à gauche, un panneau `HolePreviewView` à droite qui affiche en
+         direct nom/par/dimensions et une mini-carte du trou sous le
+         curseur de sélection (recalculé à chaque case survolée ; parser
+         un seul petit fichier `.course` par frame ~200ms est négligeable,
+         même opération que celle déjà faite à l'ouverture réelle). Un
+         fichier corrompu/invalide affiche un message d'erreur dans le
+         panneau plutôt que de planter ; "+ Nouveau trou" affiche "aucun
+         aperçu". `BuilderView::cursor` généralisé en `Option<Pos>` pour
+         permettre ce réemploi en lecture seule (`None` = pas de case
+         surlignée, centrage sur le milieu de la grille) plutôt que de
+         dupliquer la logique de rendu de grille.
+
+         **Généralisation à tout le builder** : après le sélecteur, l'écran
+         de dessin lui-même (`run_builder`) est passé d'un bandeau plein
+         largeur (en-tête au-dessus, grille en dessous) à une colonne
+         gauche/droite comme le jeu (`tui::SidebarState`) — sidebar à
+         gauche (`tui::BuilderSidebarView`, largeur 28 comme en jeu), grille
+         à droite. Trois panneaux empilés, réutilisant les helpers de style
+         de la sidebar du jeu (`panel`/`panel_bottom_aligned`/`SIDEBAR_BG`
+         dans `sidebar.rs`, passés de privés à `pub(crate)` pour ce
+         partage) : "Hole" (nom/par/orientation), "Position" (x/y +
+         ligne/colonne courante, avec l'avertissement de fin de grille déjà
+         en place), "Controls" (aide clavier ou saisie en cours, alignée en
+         bas comme le panneau Contrôles du jeu). La légende des terrains
+         n'est plus affichée en permanence dans cette colonne étroite
+         (~24 caractères utiles, contre ~110 pour la légende complète sur
+         une seule ligne) — déplacée dans `BuilderSetupView`, qui a toute
+         la largeur de l'écran. Les messages de sauvegarde/erreur, trop
+         longs eux aussi pour une seule ligne étroite, sont désormais
+         découpés à la limite des mots (`wrap_text`, testée) plutôt que
+         tronqués à mi-mot — repéré en testant visuellement le premier
+         jet, corrigé dans la foulée.
       10. *(Plus tard, hors scope v1)* Estimation des longueurs de coup
           pendant l'édition, en réutilisant `core::preview_shot` depuis la
           position du curseur — utile pour doser bunkers/rough/eau, mais

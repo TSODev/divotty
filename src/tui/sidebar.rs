@@ -53,7 +53,7 @@ const TITLE_ACCENT: Color = Color::White;
 /// Fond des 7 panneaux de la sidebar — vert sombre plutôt que le noir par
 /// défaut du terminal, petit clin d'œil golf (gazon). À ajuster si le
 /// rendu ne convient pas.
-const SIDEBAR_BG: Color = Color::Rgb(10, 65, 35);
+pub(crate) const SIDEBAR_BG: Color = Color::Rgb(10, 65, 35);
 const HOLE_ACCENT: Color = Color::LightGreen;
 const SCORE_ACCENT: Color = Color::Yellow;
 const CLUB_ACCENT: Color = Color::LightBlue;
@@ -248,7 +248,7 @@ fn shot_message(shot: &ShotResult, strokes: u8, lang: Lang) -> String {
 /// Insère une amorce colorée (dans la couleur d'accent du panneau) entre la
 /// bordure gauche et le texte de la ligne, plutôt que le texte collé
 /// directement contre le cadre.
-fn prefix_line(line: Line<'static>, accent: Color) -> Line<'static> {
+pub(crate) fn prefix_line(line: Line<'static>, accent: Color) -> Line<'static> {
     let mut spans = vec![Span::styled("▏ ", Style::default().fg(accent))];
     spans.extend(line.spans);
     Line::from(spans)
@@ -258,7 +258,7 @@ fn prefix_line(line: Line<'static>, accent: Color) -> Line<'static> {
 /// propre à chaque panneau, et un contenu ligne par ligne dont chaque ligne
 /// porte son propre style — pour que seule l'information pertinente (score,
 /// dernier coup, vent) réagisse en couleur, pas tout le panneau.
-fn panel(area: Rect, buf: &mut Buffer, title: &str, accent: Color, lines: Vec<Line<'static>>) {
+pub(crate) fn panel(area: Rect, buf: &mut Buffer, title: &str, accent: Color, lines: Vec<Line<'static>>) {
     let block = Block::default()
         .border_type(BorderType::Rounded)
         .borders(Borders::ALL)
@@ -272,7 +272,7 @@ fn panel(area: Rect, buf: &mut Buffer, title: &str, accent: Color, lines: Vec<Li
 /// haut (`Paragraph` ne supporte pas l'alignement vertical nativement — on
 /// préfixe simplement des lignes vides calculées à partir de la hauteur
 /// disponible).
-fn panel_bottom_aligned(area: Rect, buf: &mut Buffer, title: &str, accent: Color, lines: Vec<Line<'static>>) {
+pub(crate) fn panel_bottom_aligned(area: Rect, buf: &mut Buffer, title: &str, accent: Color, lines: Vec<Line<'static>>) {
     let block = Block::default()
         .border_type(BorderType::Rounded)
         .borders(Borders::ALL)

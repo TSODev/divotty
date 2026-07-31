@@ -45,7 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   straight to a blank hole: choose "+ New hole", or pick any existing
   `.course` file to open for editing — either "modify in place" (saves
   straight back to that same file) or "duplicate" (saves as a new file,
-  same as a brand-new hole).
+  same as a brand-new hole). The picker also shows a live preview of the
+  highlighted hole — name, par, dimensions, and a small map — next to the
+  list. The drawing screen itself now matches the game's own layout
+  (a stacked sidebar on the left, the map filling the right) instead of a
+  single wide banner above the grid.
 
 ### Changed
 - Courses, save files, and the hole builder's library no longer depend on

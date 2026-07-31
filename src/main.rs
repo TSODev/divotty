@@ -12,8 +12,9 @@ use crate::core::{
     Shot, ShotResult, TerrainKind, Wind, COURSE_HEIGHT, COURSE_WIDTH,
 };
 use crate::tui::{
-    BuilderHeaderView, BuilderMode, BuilderOrientation, BuilderSetupView, BuilderView,
-    CourseMenuState, CourseView, HolePickerView, Lang, ScorecardView, SidebarState, Viewport,
+    BuilderMode, BuilderOrientation, BuilderSetupView, BuilderSidebarView, BuilderView,
+    CourseMenuState, CourseView, HolePickerView, HolePreviewView, Lang, ScorecardView,
+    SidebarState, Viewport,
 };
 use directories::ProjectDirs;
 use rand::Rng;
@@ -1123,7 +1124,27 @@ fn pick_hole_to_build<B: ratatui::backend::Backend>(
     let mut confirm_target: Option<PathBuf> = None;
 
     loop {
+        // Recalculé à chaque itération à partir de `selected` : parser un
+        // seul petit fichier `.course` par frame est négligeable (voir
+        // `HolePreviewView`), pas besoin de mettre en cache ou de détecter
+        // un changement de sélection.
+        let preview: Option<Result<Hole, String>> = if selected == 0 {
+            None
+        } else {
+            let path = &files[selected - 1];
+            Some(
+                std::fs::read_to_string(path)
+                    .map_err(|e| e.to_string())
+                    .and_then(|raw| Hole::parse(&raw).map_err(|e| e.to_string())),
+            )
+        };
+
         terminal.draw(|frame| {
+            let columns = Layout::default()
+                .direction(LayoutDirection::Horizontal)
+                .constraints([Constraint::Length(36), Constraint::Min(0)])
+                .split(frame.size());
+
             frame.render_widget(
                 HolePickerView {
                     lang: *lang,
@@ -1132,7 +1153,12 @@ fn pick_hole_to_build<B: ratatui::backend::Backend>(
                     confirm_target: confirm_target.as_deref(),
                     courses_root: &courses_root,
                 },
-                frame.size(),
+                columns[0],
+            );
+
+            frame.render_widget(
+                HolePreviewView { lang: *lang, preview: preview.as_ref() },
+                columns[1],
             );
         })?;
 
@@ -1221,13 +1247,13 @@ fn run_builder<B: ratatui::backend::Backend>(
 ) -> Result<BuilderExit> {
     loop {
         terminal.draw(|frame| {
-            let rows = Layout::default()
-                .direction(LayoutDirection::Vertical)
-                .constraints([Constraint::Length(7), Constraint::Min(0)])
+            let columns = Layout::default()
+                .direction(LayoutDirection::Horizontal)
+                .constraints([Constraint::Length(28), Constraint::Min(0)])
                 .split(frame.size());
 
             frame.render_widget(
-                BuilderHeaderView {
+                BuilderSidebarView {
                     lang: state.lang,
                     name: &state.name,
                     par: state.par,
@@ -1246,17 +1272,17 @@ fn run_builder<B: ratatui::backend::Backend>(
                     quit_confirm: state.quit_confirm,
                     exit_confirm: state.exit_confirm,
                 },
-                rows[0],
+                columns[0],
             );
 
             frame.render_widget(
                 BuilderView {
                     tiles: &state.tiles,
-                    cursor: state.cursor,
-                    viewport_w: rows[1].width.saturating_sub(2) as usize,
-                    viewport_h: rows[1].height.saturating_sub(2) as usize,
+                    cursor: Some(state.cursor),
+                    viewport_w: columns[1].width.saturating_sub(2) as usize,
+                    viewport_h: columns[1].height.saturating_sub(2) as usize,
                 },
-                rows[1],
+                columns[1],
             );
         })?;
 

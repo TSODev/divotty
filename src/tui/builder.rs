@@ -1,10 +1,12 @@
-use crate::core::{Pos, TerrainKind};
+use crate::core::{Hole, Pos, TerrainKind};
 use crate::tui::lang::Lang;
 use crate::tui::render::{terrain_style, Viewport};
+use crate::tui::sidebar::{panel, panel_bottom_aligned};
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Direction as LayoutDirection, Layout, Rect},
     style::{Color, Modifier, Style},
+    text::Line,
     widgets::{Block, BorderType, Borders, Widget},
 };
 use std::path::{Path, PathBuf};
@@ -92,6 +94,30 @@ fn write_spans(buf: &mut Buffer, area: Rect, y: u16, segments: &[(String, Style)
     }
 }
 
+/// Découpe `text` en lignes d'au plus `width` caractères, à la limite des
+/// mots — utilisé pour les messages de sauvegarde/erreur dans le panneau
+/// Contrôles de `BuilderSidebarView`, trop étroit (~24 caractères utiles)
+/// pour une seule ligne comme dans l'ancien bandeau pleine largeur.
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.is_empty() {
+            current.push_str(word);
+        } else if current.len() + 1 + word.len() <= width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut current));
+            current.push_str(word);
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
 /// Petit écran d'en-tête avant de dessiner un nouveau trou : le par visé
 /// (seul champ obligatoire) et l'orientation, qui ensemble suggèrent une
 /// taille de grille cohérente avec les distances de club calibrées ailleurs
@@ -148,6 +174,17 @@ impl Widget for BuilderSetupView {
                 Style::default().fg(Color::White),
             );
         }
+
+        // Légende affichée ici plutôt que dans la sidebar de l'écran de
+        // dessin (`BuilderSidebarView`) : une seule ligne complète fait
+        // ~110 caractères, bien trop pour une colonne de ~28 — cet écran a
+        // toute la largeur du terminal pour lui, donc de la place à revendre.
+        write_spans(
+            buf,
+            inner,
+            inner.y + lines.len() as u16 + 1,
+            &terrain_legend_segments(self.lang),
+        );
     }
 }
 
@@ -233,12 +270,71 @@ impl<'a> Widget for HolePickerView<'a> {
     }
 }
 
-/// Légende des caractères de terrain reconnus (voir `TerrainKind::from_char`)
-/// — même légende que celle imprimée sur `tools/hole_design_canvas.pdf`,
-/// pour ne pas avoir à s'en souvenir par cœur en dessinant. Les lettres
-/// sont insensibles à la casse à la frappe (voir `run_builder` : le
-/// caractère tapé est mis en majuscule avant d'être résolu), la légende ne
-/// montre donc que la forme majuscule pour rester lisible.
+/// Aperçu du trou actuellement sélectionné dans `HolePickerView`, affiché à
+/// côté de la liste (voir `pick_hole_to_build` dans `main.rs`) — recalculé
+/// à chaque case sélectionnée. Parser un seul petit fichier `.course` à
+/// chaque frame (repos de la boucle ~200ms) est négligeable, c'est la même
+/// opération que celle déjà faite à l'ouverture réelle d'un fichier.
+pub struct HolePreviewView<'a> {
+    pub lang: Lang,
+    /// `None` : "+ Nouveau trou" sélectionné, rien à prévisualiser.
+    /// `Some(Err(message))` : le fichier n'a pas pu être lu ou parsé.
+    /// `Some(Ok(hole))` : trou chargé avec succès, à afficher.
+    pub preview: Option<&'a Result<Hole, String>>,
+}
+
+impl<'a> Widget for HolePreviewView<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let title = match self.lang {
+            Lang::En => "Preview",
+            Lang::Fr => "Aperçu",
+        };
+        let block = Block::default().borders(Borders::ALL).title(title);
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        match self.preview {
+            None => {
+                let msg = match self.lang {
+                    Lang::En => "No preview — starts from a blank grid.",
+                    Lang::Fr => "Aucun aperçu — grille vierge au départ.",
+                };
+                write_line(buf, inner, inner.y, msg, Style::default().fg(Color::DarkGray));
+            }
+            Some(Err(err)) => {
+                let msg = match self.lang {
+                    Lang::En => format!("Couldn't load preview: {err}"),
+                    Lang::Fr => format!("Aperçu impossible : {err}"),
+                };
+                write_line(buf, inner, inner.y, &msg, Style::default().fg(Color::LightRed));
+            }
+            Some(Ok(hole)) => {
+                let tiles = hole.local_tiles();
+                let h = tiles.len();
+                let w = tiles.first().map(|r| r.len()).unwrap_or(0);
+                let info_line = format!("{}  ·  Par {}  ·  {w}x{h}", hole.meta.name, hole.meta.par);
+                write_line(buf, inner, inner.y, &info_line, Style::default().fg(Color::White));
+
+                if inner.height > 2 {
+                    let map_area = Rect {
+                        x: inner.x,
+                        y: inner.y + 2,
+                        width: inner.width,
+                        height: inner.height - 2,
+                    };
+                    BuilderView {
+                        tiles: &tiles,
+                        cursor: None,
+                        viewport_w: map_area.width as usize,
+                        viewport_h: map_area.height as usize,
+                    }
+                    .render(map_area, buf);
+                }
+            }
+        }
+    }
+}
+
 /// Légende de terrain sous forme de segments colorés, un par
 /// `TerrainKind`, chacun repris avec la couleur exacte que ce terrain
 /// affiche sur la carte (`terrain_style` dans `render.rs`) plutôt qu'une
@@ -292,13 +388,25 @@ fn terrain_legend_segments(lang: Lang) -> Vec<(String, Style)> {
 /// avertissement un peu avant d'y arriver, pas seulement une fois dessus.
 const NEAR_END_THRESHOLD: usize = 3;
 
-/// Bandeau d'information au-dessus de la grille en cours d'édition : nom,
-/// par, orientation, légende des terrains, position courante dans le sens
-/// de l'avancée automatique (avec avertissement à l'approche de la
-/// dernière ligne/colonne), et la ligne d'instructions ou de saisie qui
-/// dépend du `mode` courant (dessin, édition du nom, saisie du chemin de
-/// sauvegarde).
-pub struct BuilderHeaderView<'a> {
+const HOLE_ACCENT: Color = Color::LightGreen;
+const POSITION_ACCENT: Color = Color::Cyan;
+const CONTROLS_ACCENT: Color = Color::DarkGray;
+
+fn bold(color: Color) -> Style {
+    Style::default().fg(color).add_modifier(Modifier::BOLD)
+}
+
+/// Colonne de gauche pendant le dessin d'un trou (voir `run_builder` dans
+/// `main.rs`) — même esprit que la sidebar du jeu (`tui::SidebarState`) :
+/// plusieurs petits panneaux empilés plutôt qu'un seul bandeau, la carte
+/// occupant la colonne de droite. Trois panneaux : "Hole" (nom/par/
+/// orientation), "Position" (x/y + progression dans le sens de l'avancée
+/// automatique), "Controls" (aide clavier ou saisie en cours, alignée en
+/// bas comme le panneau Contrôles du jeu). La légende des terrains n'est
+/// plus affichée en permanence ici — une seule ligne complète fait ~110
+/// caractères, bien trop pour une colonne de ~28 — déplacée dans
+/// `BuilderSetupView`, qui a toute la largeur de l'écran pour elle.
+pub struct BuilderSidebarView<'a> {
     pub lang: Lang,
     pub name: &'a str,
     pub par: u8,
@@ -318,177 +426,187 @@ pub struct BuilderHeaderView<'a> {
     pub exit_confirm: bool,
 }
 
-impl<'a> Widget for BuilderHeaderView<'a> {
+impl<'a> Widget for BuilderSidebarView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = match self.lang {
-            Lang::En => "Hole builder",
-            Lang::Fr => "Éditeur de trou",
+        let chunks = Layout::default()
+            .direction(LayoutDirection::Vertical)
+            .constraints([Constraint::Length(5), Constraint::Length(4), Constraint::Min(0)])
+            .split(area);
+
+        let hole_title = match self.lang {
+            Lang::En => "Hole",
+            Lang::Fr => "Trou",
         };
-        let block = Block::default().borders(Borders::ALL).title(title);
-        let inner = block.inner(area);
-        block.render(area, buf);
-
-        let info_line = match self.lang {
-            Lang::En => format!(
-                "Name: {}    Par: {}    Orientation: {}",
-                self.name,
-                self.par,
-                self.orientation.label(self.lang)
+        let hole_lines = vec![
+            Line::styled(
+                match self.lang {
+                    Lang::En => format!("Name: {}", self.name),
+                    Lang::Fr => format!("Nom : {}", self.name),
+                },
+                Style::default().fg(Color::White),
             ),
-            Lang::Fr => format!(
-                "Nom : {}    Par : {}    Orientation : {}",
-                self.name,
-                self.par,
-                self.orientation.label(self.lang)
+            Line::styled(
+                match self.lang {
+                    Lang::En => format!("Par: {}", self.par),
+                    Lang::Fr => format!("Par : {}", self.par),
+                },
+                Style::default().fg(Color::White),
             ),
-        };
-        write_line(buf, inner, inner.y, &info_line, Style::default().fg(Color::White));
+            Line::styled(
+                match self.lang {
+                    Lang::En => format!("Orientation: {}", self.orientation.label(self.lang)),
+                    Lang::Fr => format!("Orientation : {}", self.orientation.label(self.lang)),
+                },
+                Style::default().fg(Color::White),
+            ),
+        ];
+        panel(chunks[0], buf, hole_title, HOLE_ACCENT, hole_lines);
 
-        write_spans(buf, inner, inner.y + 1, &terrain_legend_segments(self.lang));
-
-        // Ligne/colonne courante dans le sens de l'avancée automatique de la
-        // frappe (voir `BuilderOrientation`) : c'est cette dimension qui
-        // s'arrête net en fin de grille plutôt que de boucler, donc celle
-        // qui mérite un avertissement à l'approche de la fin.
-        // x/y explicites, 0-indexés — mêmes coordonnées que la grille du
-        // fichier `.course` et que les axes imprimés sur
+        // Position courante + progression dans le sens de l'avancée
+        // automatique de la frappe (voir `BuilderOrientation`) : c'est
+        // cette dimension qui s'arrête net en fin de grille plutôt que de
+        // boucler, donc celle qui mérite un avertissement à l'approche de
+        // la fin. x/y explicites, 0-indexés — mêmes coordonnées que la
+        // grille du fichier `.course` et que les axes imprimés sur
         // `tools/hole_design_canvas.pdf` (origine (0,0) en haut à gauche),
         // pour naviguer directement vers une case repérée sur un plan
         // dessiné à l'avance plutôt que de deviner sa position à l'écran.
-        let (position_line, remaining) = match self.orientation {
+        let position_title = match self.lang {
+            Lang::En => "Position",
+            Lang::Fr => "Position",
+        };
+        let (progress_line, remaining) = match self.orientation {
             BuilderOrientation::Horizontal => {
                 let remaining = self.grid_height - 1 - self.cursor.y;
                 let line = match self.lang {
-                    Lang::En => format!(
-                        "Position: x={} y={}   (row {}/{})",
-                        self.cursor.x,
-                        self.cursor.y,
-                        self.cursor.y + 1,
-                        self.grid_height
-                    ),
-                    Lang::Fr => format!(
-                        "Position : x={} y={}   (ligne {}/{})",
-                        self.cursor.x,
-                        self.cursor.y,
-                        self.cursor.y + 1,
-                        self.grid_height
-                    ),
+                    Lang::En => format!("Row {}/{}", self.cursor.y + 1, self.grid_height),
+                    Lang::Fr => format!("Ligne {}/{}", self.cursor.y + 1, self.grid_height),
                 };
                 (line, remaining)
             }
             BuilderOrientation::Vertical => {
                 let remaining = self.grid_width - 1 - self.cursor.x;
                 let line = match self.lang {
-                    Lang::En => format!(
-                        "Position: x={} y={}   (column {}/{})",
-                        self.cursor.x,
-                        self.cursor.y,
-                        self.cursor.x + 1,
-                        self.grid_width
-                    ),
-                    Lang::Fr => format!(
-                        "Position : x={} y={}   (colonne {}/{})",
-                        self.cursor.x,
-                        self.cursor.y,
-                        self.cursor.x + 1,
-                        self.grid_width
-                    ),
+                    Lang::En => format!("Column {}/{}", self.cursor.x + 1, self.grid_width),
+                    Lang::Fr => format!("Colonne {}/{}", self.cursor.x + 1, self.grid_width),
                 };
                 (line, remaining)
             }
         };
-        let position_style = if remaining == 0 {
-            Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD)
+        let progress_style = if remaining == 0 {
+            bold(Color::LightRed)
         } else if remaining <= NEAR_END_THRESHOLD {
-            Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD)
+            bold(Color::LightYellow)
         } else {
             Style::default().fg(Color::White)
         };
-        let position_line = if remaining == 0 {
+        let progress_line = if remaining == 0 {
             match self.lang {
-                Lang::En => format!("{position_line} — last one, won't wrap around"),
-                Lang::Fr => format!("{position_line} — dernière, pas de retour au début"),
+                Lang::En => format!("{progress_line} (last!)"),
+                Lang::Fr => format!("{progress_line} (dernière !)"),
             }
         } else {
-            position_line
+            progress_line
         };
-        write_line(buf, inner, inner.y + 2, &position_line, position_style);
+        let position_lines = vec![
+            Line::styled(
+                format!("x={} y={}", self.cursor.x, self.cursor.y),
+                Style::default().fg(Color::White),
+            ),
+            Line::styled(progress_line, progress_style),
+        ];
+        panel(chunks[1], buf, position_title, POSITION_ACCENT, position_lines);
 
-        let fourth_line = if self.quit_confirm {
-            match self.lang {
-                Lang::En => "Press q again to quit without saving".to_string(),
-                Lang::Fr => "Appuyez encore sur q pour quitter sans sauvegarder".to_string(),
+        let controls_title = match self.lang {
+            Lang::En => "Controls",
+            Lang::Fr => "Contrôles",
+        };
+        let mut controls_lines: Vec<Line<'static>> = Vec::new();
+        if let Some(message) = self.message {
+            for line in wrap_text(message, 24) {
+                controls_lines.push(Line::styled(line, bold(Color::LightRed)));
             }
+        }
+        if self.quit_confirm {
+            controls_lines.push(Line::styled(
+                match self.lang {
+                    Lang::En => "Press q again",
+                    Lang::Fr => "Appuyez encore",
+                },
+                bold(Color::Red),
+            ));
+            controls_lines.push(Line::styled(
+                match self.lang {
+                    Lang::En => "to quit (unsaved)",
+                    Lang::Fr => "sur q pour quitter",
+                },
+                bold(Color::Red),
+            ));
         } else if self.exit_confirm {
-            match self.lang {
-                Lang::En => {
-                    "Press Esc again to discard and return to menu (S to save first)".to_string()
-                }
-                Lang::Fr => {
-                    "Appuyez encore sur Échap pour abandonner et revenir au menu \
-                     (S pour sauvegarder d'abord)"
-                        .to_string()
-                }
-            }
+            controls_lines.push(Line::styled(
+                match self.lang {
+                    Lang::En => "Esc again: discard",
+                    Lang::Fr => "Échap : abandonner",
+                },
+                bold(Color::LightYellow),
+            ));
+            controls_lines.push(Line::styled(
+                match self.lang {
+                    Lang::En => "S: save first",
+                    Lang::Fr => "S : sauver d'abord",
+                },
+                bold(Color::LightYellow),
+            ));
         } else {
             match self.mode {
-                BuilderMode::Drawing => match self.lang {
-                    Lang::En => {
-                        "Type a terrain char to paint & advance   arrows: move   \
-                         U: undo   N: rename   S: save   Esc Esc: menu   qq: quit"
-                            .to_string()
-                    }
-                    Lang::Fr => {
-                        "Tapez un caractère de terrain pour peindre et avancer   \
-                         flèches : déplacer   U : annuler   N : renommer   \
-                         S : sauvegarder   Échap Échap : menu   qq : quitter"
-                            .to_string()
-                    }
-                },
-                BuilderMode::EditingName => match self.lang {
-                    Lang::En => format!("New name: {}_ (Enter to confirm, Esc to cancel)", self.text_input),
-                    Lang::Fr => format!("Nouveau nom : {}_ (Entrée valider, Échap annuler)", self.text_input),
-                },
-                BuilderMode::EnteringSaveName => match self.lang {
-                    Lang::En => format!(
-                        "File name (no extension): {}_ (Enter to confirm, Esc to cancel)",
-                        self.text_input
-                    ),
-                    Lang::Fr => format!(
-                        "Nom de fichier (sans extension) : {}_ (Entrée valider, Échap annuler)",
-                        self.text_input
-                    ),
-                },
+                BuilderMode::Drawing => {}
+                BuilderMode::EditingName | BuilderMode::EnteringSaveName => {
+                    controls_lines.push(Line::styled(
+                        format!("{}_", self.text_input),
+                        Style::default().fg(Color::White),
+                    ));
+                }
                 BuilderMode::ConfirmOverwrite => {
                     let name = self.pending_save_name.unwrap_or("");
-                    match self.lang {
-                        Lang::En => format!(
-                            "'{name}' already exists — overwrite? (Enter/Y: overwrite, Esc/N: rename)"
-                        ),
-                        Lang::Fr => format!(
-                            "« {name} » existe déjà — écraser ? (Entrée/Y : écraser, Échap/N : renommer)"
-                        ),
-                    }
+                    controls_lines.push(Line::styled(
+                        format!("'{name}'"),
+                        bold(Color::White),
+                    ));
+                    controls_lines.push(Line::styled(
+                        match self.lang {
+                            Lang::En => "already exists:",
+                            Lang::Fr => "existe déjà :",
+                        },
+                        Style::default().fg(Color::White),
+                    ));
                 }
             }
-        };
-        write_line(
-            buf,
-            inner,
-            inner.y + 3,
-            &fourth_line,
-            Style::default().fg(Color::DarkGray),
-        );
-
-        if let Some(message) = self.message {
-            write_line(
-                buf,
-                inner,
-                inner.y + 4,
-                message,
-                Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD),
+            let base: &str = match self.mode {
+                BuilderMode::Drawing => match self.lang {
+                    Lang::En => {
+                        "letters  paint\n↑↓←→  move\nU  undo\nN  rename\nS  save\n\
+                         Esc Esc  menu\nqq  quit"
+                    }
+                    Lang::Fr => {
+                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nN  renommer\n\
+                         S  sauver\nÉchap Échap  menu\nqq  quitter"
+                    }
+                },
+                BuilderMode::EditingName | BuilderMode::EnteringSaveName => match self.lang {
+                    Lang::En => "Enter  confirm\nEsc  cancel",
+                    Lang::Fr => "Entrée  valider\nÉchap  annuler",
+                },
+                BuilderMode::ConfirmOverwrite => match self.lang {
+                    Lang::En => "Enter/Y  overwrite\nEsc/N  rename",
+                    Lang::Fr => "Entrée/Y  écraser\nÉchap/N  renommer",
+                },
+            };
+            controls_lines.extend(
+                base.lines()
+                    .map(|l| Line::styled(l.to_string(), Style::default().fg(Color::Gray))),
             );
         }
+        panel_bottom_aligned(chunks[2], buf, controls_title, CONTROLS_ACCENT, controls_lines);
     }
 }
 
@@ -499,7 +617,10 @@ impl<'a> Widget for BuilderHeaderView<'a> {
 /// aucune des surimpressions d'aperçu de coup, qui n'ont pas de sens ici.
 pub struct BuilderView<'a> {
     pub tiles: &'a [Vec<TerrainKind>],
-    pub cursor: Pos,
+    /// `None` pour un aperçu en lecture seule (pas de case à surligner,
+    /// voir `HolePreviewView`) — le centrage retombe alors sur le milieu
+    /// de la grille plutôt que sur une position de curseur.
+    pub cursor: Option<Pos>,
     pub viewport_w: usize,
     pub viewport_h: usize,
 }
@@ -518,10 +639,12 @@ impl<'a> Widget for BuilderView<'a> {
             return;
         }
 
+        let center = self.cursor.unwrap_or(Pos { x: grid_w / 2, y: grid_h / 2 });
+
         let view_w = (inner.width as usize).min(self.viewport_w).max(1);
         let view_h = (inner.height as usize).min(self.viewport_h).max(1);
         let viewport = Viewport { width: view_w, height: view_h };
-        let (ox, oy) = viewport.top_left(self.cursor, grid_w, grid_h);
+        let (ox, oy) = viewport.top_left(center, grid_w, grid_h);
 
         let content_w = grid_w.min(view_w);
         let content_h = grid_h.min(view_h);
@@ -534,7 +657,7 @@ impl<'a> Widget for BuilderView<'a> {
                 let gy = oy + row;
                 let terrain = self.tiles[gy][gx];
                 let (ch, color) = terrain_style(terrain);
-                let is_cursor = gx == self.cursor.x && gy == self.cursor.y;
+                let is_cursor = self.cursor == Some(Pos { x: gx, y: gy });
 
                 let x = inner.x + margin_x + col as u16;
                 let y = inner.y + margin_y + row as u16;
@@ -552,5 +675,38 @@ impl<'a> Widget for BuilderView<'a> {
                 buf.get_mut(x, y).set_char(ch).set_style(style);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrap_text_keeps_short_lines_untouched() {
+        assert_eq!(wrap_text("short line", 24), vec!["short line".to_string()]);
+    }
+
+    #[test]
+    fn wrap_text_breaks_at_word_boundaries_within_width() {
+        let wrapped = wrap_text("not yet part of any course", 15);
+        for line in &wrapped {
+            assert!(line.chars().count() <= 15, "line too long: {line:?}");
+        }
+        assert_eq!(wrapped.join(" "), "not yet part of any course");
+    }
+
+    #[test]
+    fn wrap_text_lets_a_single_long_word_overflow_the_width() {
+        // Un seul "mot" sans espace (ex. un chemin de fichier) ne peut pas
+        // être coupé plus finement — reste sur sa propre ligne même si ça
+        // dépasse `width` (mieux qu'une coupure au milieu d'un chemin).
+        let wrapped = wrap_text("courses/_library/a_very_long_name.course", 15);
+        assert_eq!(wrapped, vec!["courses/_library/a_very_long_name.course".to_string()]);
+    }
+
+    #[test]
+    fn wrap_text_returns_empty_for_empty_input() {
+        assert!(wrap_text("", 24).is_empty());
     }
 }

@@ -317,7 +317,25 @@ Fait et testé :
   (testée) à partir de `Hole::local_tiles()` (testée, réutilisée aussi par
   `to_course_string` — élimine une duplication de calcul d'offset qui
   existait entre les deux), l'orientation étant déduite du rapport
-  largeur/hauteur de la grille chargée.
+  largeur/hauteur de la grille chargée. Le sélecteur est scindé en deux
+  colonnes (même esprit que sidebar/carte en jeu) : la liste à gauche, un
+  panneau `tui::HolePreviewView` à droite qui affiche nom/par/dimensions
+  et une mini-carte du trou sous le curseur de sélection, recalculé à
+  chaque case survolée (parser un seul petit fichier `.course` par frame
+  est négligeable). `BuilderView::cursor` est passé de `Pos` à
+  `Option<Pos>` pour permettre ce réemploi en lecture seule (`None` = pas
+  de case surlignée, centrage sur le milieu de la grille) sans dupliquer
+  la logique de rendu. Généralisation ensuite à tout le builder : l'écran
+  de dessin (`run_builder`) est passé d'un bandeau plein largeur à une
+  colonne gauche (`tui::BuilderSidebarView`, largeur 28 comme la sidebar du
+  jeu) / grille à droite — trois panneaux ("Hole", "Position", "Controls")
+  réutilisant les helpers de style de `sidebar.rs` (`panel`/
+  `panel_bottom_aligned`/`SIDEBAR_BG`, passés de privés à `pub(crate)`).
+  La légende des terrains, trop large (~110 caractères) pour cette colonne
+  étroite, est déplacée dans `BuilderSetupView` (pleine largeur). Les
+  messages de sauvegarde/erreur sont découpés à la limite des mots
+  (`wrap_text`, testée) plutôt que tronqués à mi-mot dans la colonne
+  étroite.
 - Répertoire de données résolu (`resolve_data_root()`/
   `resolve_data_root_from()`, testée, voir principe directeur ci-dessus) :
   `courses/`, `save.yaml` et `courses/_library/` suivent tous la même
@@ -335,8 +353,8 @@ Pas encore fait (voir `ROADMAP.md` pour le détail) :
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
   `adjust_die_strength`...) a maintenant 41 tests unitaires dans
-  `src/main.rs` (84 au total avec `core`), mais rien qui simule un vrai
-  terminal/`crossterm`.
+  `src/main.rs` (88 au total avec `core` et `tui`), mais rien qui simule un
+  vrai terminal/`crossterm`.
 
 ## Publication crates.io
 

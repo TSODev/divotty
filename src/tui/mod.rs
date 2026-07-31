@@ -17,8 +17,8 @@ pub mod scorecard;
 pub mod sidebar;
 
 pub use builder::{
-    BuilderHeaderView, BuilderMode, BuilderOrientation, BuilderSetupView, BuilderView,
-    HolePickerView,
+    BuilderMode, BuilderOrientation, BuilderSetupView, BuilderSidebarView, BuilderView,
+    HolePickerView, HolePreviewView,
 };
 pub use lang::Lang;
 pub use menu::CourseMenuState;
