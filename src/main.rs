@@ -539,7 +539,6 @@ fn run_loop<B: ratatui::backend::Backend>(
                 state.ball,
                 state.club,
                 state.aim,
-                state.wind,
                 state.die_strength,
             );
             frame.render_widget(

@@ -49,7 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wind: a random direction and strength are rolled when a hole loads, and
   drift the ball's landing spot downwind (proportional to shot distance —
   putts are never affected). Shown in the Aim panel next to the player's
-  own aim compass, and factored into the shot preview so it stays accurate.
+  own aim compass, as a direction arrow and a Calm/Moderate/Strong label
+  (color-coded green/yellow/red) rather than a raw strength number. The
+  shot preview deliberately ignores wind, though — it's on the player to
+  read it and compensate when aiming, rather than have the preview quietly
+  correct for it.
 - New penalty area terrain (`X`, shown in red): unlike water or
   out-of-bounds, it charges a stroke but doesn't force a drop back to
   where the shot started — the ball stays put.

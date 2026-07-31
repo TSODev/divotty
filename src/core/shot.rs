@@ -196,9 +196,14 @@ fn find_trajectory_block(hole: &Hole, from: Pos, target: (f32, f32)) -> Option<P
 
 /// Aperçu affichable avant de jouer un coup : où la balle peut
 /// raisonnablement atterrir selon le club et la direction visée, avant même
-/// de lancer le dé. Ne tient pas compte des obstacles sur la trajectoire
-/// (`blocks_trajectory`) ni de la déviation aléatoire réelle : c'est un
-/// aperçu, pas une prédiction exacte — `resolve_shot` reste seul à faire foi.
+/// de lancer le dé. Ne tient compte ni des obstacles sur la trajectoire
+/// (`blocks_trajectory`), ni de la déviation aléatoire réelle, ni du vent :
+/// c'est un guide de visée, pas une prédiction exacte — `resolve_shot` reste
+/// seul à faire foi. L'absence de vent est délibérée (pas juste "pas encore
+/// fait") : au joueur de repérer le vent affiché dans le panneau Visée et
+/// d'adapter sa visée en conséquence, plutôt que l'aperçu ne fasse cette
+/// correction à sa place — c'est précisément la compétence que le vent est
+/// censé demander.
 #[derive(Debug, Clone, Copy)]
 pub struct ShotPreview {
     /// Atterrissage si le dé donne 6 (portée maximale).
@@ -213,6 +218,7 @@ pub struct ShotPreview {
 /// Calcule l'aperçu de portée/dispersion pour un club et une direction
 /// donnés, depuis la case `from`. Utilisé par l'UI pour afficher une zone
 /// de dispersion visée avant que le joueur ne joue réellement le coup.
+/// Volontairement sans vent, voir `ShotPreview`.
 ///
 /// `die_strength` (1 à 6) est le plafond que le joueur a choisi pour le dé
 /// (voir `GameState::die_strength` côté `app`) : le meilleur tirage possible
@@ -223,7 +229,6 @@ pub fn preview_shot(
     from: Pos,
     club: Club,
     direction: Direction,
-    wind: Wind,
     die_strength: u8,
 ) -> ShotPreview {
     let start_terrain = hole.terrain_at(from).unwrap_or(TerrainKind::OutOfBounds);
@@ -231,11 +236,10 @@ pub fn preview_shot(
 
     let landing_for_die = |die: u8| -> Pos {
         let distance = club.base_distance(die) * profile.distance_mult;
-        let (wind_dx, wind_dy) = wind_push(club, distance, wind);
-        let x = (from.x as f32 + direction.dx * distance + wind_dx)
+        let x = (from.x as f32 + direction.dx * distance)
             .round()
             .clamp(0.0, (COURSE_WIDTH - 1) as f32) as usize;
-        let y = (from.y as f32 + direction.dy * distance + wind_dy)
+        let y = (from.y as f32 + direction.dy * distance)
             .round()
             .clamp(0.0, (COURSE_HEIGHT - 1) as f32) as usize;
         Pos { x, y }
@@ -475,7 +479,7 @@ mod tests {
     fn preview_grows_with_die_and_matches_dispersion() {
         let hole = flat_fairway_hole();
         let direction = Direction { dx: 1.0, dy: 0.0 };
-        let preview = preview_shot(&hole, hole.tee, Club::Driver, direction, Wind::default(), 6);
+        let preview = preview_shot(&hole, hole.tee, Club::Driver, direction, 6);
 
         assert!(preview.max_landing.x > preview.expected_landing.x);
         assert!(preview.expected_landing.x > hole.tee.x);
@@ -493,8 +497,8 @@ mod tests {
     fn preview_shrinks_with_a_lower_die_strength() {
         let hole = flat_fairway_hole();
         let direction = Direction { dx: 1.0, dy: 0.0 };
-        let full = preview_shot(&hole, hole.tee, Club::Driver, direction, Wind::default(), 6);
-        let capped = preview_shot(&hole, hole.tee, Club::Driver, direction, Wind::default(), 3);
+        let full = preview_shot(&hole, hole.tee, Club::Driver, direction, 6);
+        let capped = preview_shot(&hole, hole.tee, Club::Driver, direction, 3);
 
         assert!(
             capped.max_landing.x < full.max_landing.x,

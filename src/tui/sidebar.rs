@@ -64,14 +64,44 @@ fn bold(color: Color) -> Style {
     Style::new().fg(color).add_modifier(Modifier::BOLD)
 }
 
+/// Catégorie de force du vent — seuils partagés entre la couleur et le
+/// libellé affichés, pour qu'ils ne puissent jamais diverger.
+enum WindTier {
+    Calm,
+    Moderate,
+    Strong,
+}
+
+fn wind_tier(strength: f32) -> WindTier {
+    if strength < 1.0 {
+        WindTier::Calm
+    } else if strength < 2.0 {
+        WindTier::Moderate
+    } else {
+        WindTier::Strong
+    }
+}
+
 /// Couleur du vent selon sa force : vert calme, jaune modéré, rouge fort.
 fn wind_color(strength: f32) -> Color {
-    if strength < 1.0 {
-        Color::LightGreen
-    } else if strength < 2.0 {
-        Color::Yellow
-    } else {
-        Color::Red
+    match wind_tier(strength) {
+        WindTier::Calm => Color::LightGreen,
+        WindTier::Moderate => Color::Yellow,
+        WindTier::Strong => Color::Red,
+    }
+}
+
+/// Libellé textuel de la force du vent, à la place d'un chiffre brut —
+/// plus parlant qu'une valeur de dispersion en cases ("2.7") pour un
+/// joueur qui n'a pas besoin de connaître la mécanique exacte.
+fn wind_strength_label(strength: f32, lang: Lang) -> &'static str {
+    match (wind_tier(strength), lang) {
+        (WindTier::Calm, Lang::En) => "Calm",
+        (WindTier::Calm, Lang::Fr) => "Calme",
+        (WindTier::Moderate, Lang::En) => "Moderate",
+        (WindTier::Moderate, Lang::Fr) => "Modéré",
+        (WindTier::Strong, Lang::En) => "Strong",
+        (WindTier::Strong, Lang::Fr) => "Fort",
     }
 }
 
@@ -389,7 +419,12 @@ impl<'a> Widget for SidebarState<'a> {
                     NEUTRAL,
                 ),
                 Line::styled(
-                    format!("{}: {} {:.1}", l.wind, compass_arrow(self.wind.direction), self.wind.strength),
+                    format!(
+                        "{}: {} {}",
+                        l.wind,
+                        compass_arrow(self.wind.direction),
+                        wind_strength_label(self.wind.strength, self.lang)
+                    ),
                     bold(wind_color(self.wind.strength)),
                 ),
             ],

@@ -79,7 +79,10 @@ The map constantly shows a preview of the shot being lined up: a dotted
 trajectory guide up to maximum range, and a dispersion halo around the
 average landing spot, before the dice are even rolled. Wind (random
 direction and strength, rolled per hole) drifts non-putt shots and is
-shown in the Aim panel alongside the player's own aim compass.
+shown in the Aim panel alongside the player's own aim compass, as a
+direction arrow and a color-coded Calm/Moderate/Strong label rather than
+a raw number — the preview itself ignores wind on purpose, so reading it
+and compensating is on you.
 
 The die roll (1-6) is always uniform, but `+`/`-` let you dial back your
 shot power (shown as a 4-slot bar, `+---` to `---+`, in the Club panel) so
