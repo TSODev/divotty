@@ -597,6 +597,42 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
 - [x] Publication sur crates.io — `divotty` v0.2.0 en ligne,
       `cargo install divotty` fonctionnel, y compris les vrais parcours
       embarqués (voir `CLAUDE.md`)
+- [ ] **Important** — Répertoire de données par défaut indépendant du
+      répertoire courant. Aujourd'hui `courses/`, `save.yaml` et
+      `courses/_library/` (bibliothèque du builder) sont tous résolus
+      relativement au cwd (voir `CLAUDE.md`, "Chemins relatifs au cwd, pas
+      au binaire") — choix délibéré à l'origine pour rester simple et
+      portable (copier le dossier du repo suffit, aucune dépendance de
+      résolution de chemin plateforme), et qui correspond bien au workflow
+      de développement actuel (`cargo run` depuis la racine du dépôt).
+      Mais une fois installé via `cargo install`, l'attente normale d'un
+      outil en ligne de commande est de fonctionner depuis n'importe quel
+      répertoire — aujourd'hui, lancer `divotty` depuis deux dossiers
+      différents donne deux `save.yaml`/bibliothèques indépendants (déjà
+      la cause du bug corrigé avant 0.2.0 qui a mené aux parcours
+      embarqués). Signalé comme important après une discussion, pas encore
+      implémenté.
+
+      Décisions déjà prises pendant la discussion :
+      - Pas `~/.config/divotty` en dur : `~/.config` (XDG_CONFIG_HOME) est
+        prévu pour des *réglages*, pas pour du *contenu* créé par
+        l'utilisateur (parcours, sauvegardes) — la bonne catégorie XDG
+        serait plutôt `~/.local/share/divotty` (XDG_DATA_HOME) sur Linux.
+        Coder ce chemin en dur serait de toute façon faux sur macOS
+        (`~/Library/Application Support`) et Windows (`%APPDATA%`).
+      - Utiliser le crate `directories` (`ProjectDirs::data_dir()`) plutôt
+        que résoudre les chemins à la main — léger, standard, donne le bon
+        dossier par plateforme automatiquement. Nouvelle dépendance à
+        peser face à l'ethos "simplicité", mais très répandue et petite.
+      - Chaîne de repli à 3 niveaux plutôt que de remplacer le cwd : (1)
+        `./courses` (cwd, inchangé — garde le workflow de développement
+        actuel intact) ; (2) dossier de données de la plateforme (nouveau
+        — résout le cas `cargo install`) ; (3) parcours embarqués dans le
+        binaire (déjà existant, dernier recours). `save.yaml` et
+        `courses/_library/` suivraient la même base résolue que
+        `courses/` (pas toujours forcés vers le dossier plateforme même
+        quand on tourne depuis le repo, pour ne pas surprendre le workflow
+        de dev).
 
 ## Idées non priorisées
 - Mode multijoueur local (tour par tour, même terminal)
