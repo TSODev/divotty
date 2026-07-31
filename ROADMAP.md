@@ -115,6 +115,22 @@
       pas automatique sur le green) : chaque case s'affiche comme un bloc
       de plusieurs caractères au lieu d'un seul. Purement cosmétique — le
       modèle de position (`Pos`, cases entières) ne change pas.
+- [x] Visée lisible sur un très court putt (1-2 cases) : en zoom, la balle
+      et le trou n'occupent plus qu'une seule sous-case du bloc zoomé
+      (au lieu de le remplir en entier) — sur un putt de 1-2 cases, deux
+      blocs pleins 3x3 ne laissaient plus de place pour voir quoi que ce
+      soit entre les deux. Le reste du bloc de la balle montre le terrain
+      réel en dessous, celui du trou le vert environnant.
+      Une flèche de visée (`format::compass_arrow`) apparaît dans le bloc
+      de la balle, dans le secteur de la direction visée — dérivée de
+      l'angle de visée brut (`ShotPreview::direction`, nouveau champ) plutôt
+      que de `expected_landing`/`max_landing` arrondis, qui peuvent
+      coïncider avec la case de départ sur un tout petit putt et perdre
+      l'info de direction. Le guide pointillé existant (`sample_line`,
+      résolution en cases entières) n'a pas été changé — pour une
+      trajectoire vraiment continue même sur 1 case, il faudrait
+      l'échantillonner à la résolution du zoom (sous-case), gardé comme
+      piste si la flèche seule ne suffit pas.
 - [x] Force du coup réglable par le joueur (`+`/`-`, 3 à 6, 6 = pleine
       puissance) : le tirage reste uniforme mais borné par le plafond
       choisi (`gen_range(1..=die_strength)`), pour éviter qu'un gros dé

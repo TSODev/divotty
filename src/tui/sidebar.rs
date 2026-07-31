@@ -1,5 +1,5 @@
 use crate::core::{Club, Direction, HoleMeta, HoleScore, Scorecard, ShotResult, TerrainKind, Wind};
-use crate::tui::format::{die_cap_bar, format_relative, score_color, score_label_text, stars};
+use crate::tui::format::{compass_arrow, die_cap_bar, format_relative, score_color, score_label_text, stars};
 use crate::tui::lang::Lang;
 use ratatui::{
     buffer::Buffer,
@@ -233,23 +233,6 @@ fn shot_message(shot: &ShotResult, strokes: u8, lang: Lang) -> String {
             Lang::En => format!("Ball on {}", terrain_name(shot.landing_terrain, lang)),
             Lang::Fr => format!("Balle sur {}", terrain_name(shot.landing_terrain, lang)),
         }
-    }
-}
-
-/// Flèche de boussole approximant la direction visée (8 secteurs de 45°).
-fn compass_arrow(direction: Direction) -> &'static str {
-    let angle_deg = direction.dy.atan2(direction.dx).to_degrees();
-    let normalized = (angle_deg + 360.0) % 360.0;
-    let sector = ((normalized + 22.5) / 45.0) as i32 % 8;
-    match sector {
-        0 => "→",
-        1 => "↘",
-        2 => "↓",
-        3 => "↙",
-        4 => "←",
-        5 => "↖",
-        6 => "↑",
-        _ => "↗",
     }
 }
 

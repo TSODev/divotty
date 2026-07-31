@@ -1,4 +1,4 @@
-use crate::core::ScoreLabel;
+use crate::core::{Direction, ScoreLabel};
 use crate::tui::lang::Lang;
 use ratatui::style::Color;
 
@@ -65,6 +65,32 @@ pub fn die_cap_bar(value: u8) -> String {
         .collect()
 }
 
+/// Secteur de boussole (8 directions, 0=Est puis sens horaire) le plus
+/// proche d'une direction donnée — calcul partagé entre `compass_arrow`
+/// (glyphe affiché) et le placement de la flèche de visée dans la carte
+/// zoomée (`render.rs`), pour que les deux restent toujours cohérents.
+pub fn compass_sector(direction: Direction) -> usize {
+    let angle_deg = direction.dy.atan2(direction.dx).to_degrees();
+    let normalized = (angle_deg + 360.0) % 360.0;
+    ((normalized + 22.5) / 45.0) as usize % 8
+}
+
+/// Flèche de boussole approximant une direction (8 secteurs de 45°).
+/// Partagée entre le panneau Visée (`sidebar.rs`) et la flèche de visée
+/// sur la carte zoomée (`render.rs`).
+pub fn compass_arrow(direction: Direction) -> &'static str {
+    match compass_sector(direction) {
+        0 => "→",
+        1 => "↘",
+        2 => "↓",
+        3 => "↙",
+        4 => "←",
+        5 => "↖",
+        6 => "↑",
+        _ => "↗",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +101,22 @@ mod tests {
         assert_eq!(die_cap_bar(4), "-+--");
         assert_eq!(die_cap_bar(5), "--+-");
         assert_eq!(die_cap_bar(6), "---+");
+    }
+
+    #[test]
+    fn compass_arrow_matches_the_expected_sector() {
+        let east = Direction { dx: 1.0, dy: 0.0 };
+        let south = Direction { dx: 0.0, dy: 1.0 };
+        let west = Direction { dx: -1.0, dy: 0.0 };
+        let north = Direction { dx: 0.0, dy: -1.0 };
+
+        assert_eq!(compass_arrow(east), "→");
+        assert_eq!(compass_arrow(south), "↓");
+        assert_eq!(compass_arrow(west), "←");
+        assert_eq!(compass_arrow(north), "↑");
+        assert_eq!(compass_sector(east), 0);
+        assert_eq!(compass_sector(south), 2);
+        assert_eq!(compass_sector(west), 4);
+        assert_eq!(compass_sector(north), 6);
     }
 }

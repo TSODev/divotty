@@ -232,6 +232,11 @@ fn find_trajectory_block(hole: &Hole, from: Pos, target: (f32, f32)) -> Option<P
 /// censé demander.
 #[derive(Debug, Clone, Copy)]
 pub struct ShotPreview {
+    /// Direction visée brute (avant arrondi en case) — utile pour un repère
+    /// d'orientation qui doit rester fiable même quand la distance visée
+    /// est si courte que `max_landing`/`expected_landing` arrondissent à la
+    /// même case que le départ (un putt de 1 case, par ex.).
+    pub direction: Direction,
     /// Atterrissage si le dé donne 6 (portée maximale).
     pub max_landing: Pos,
     /// Atterrissage pour un dé "moyen" (arrondi de 3.5), sert de centre à la
@@ -280,6 +285,7 @@ pub fn preview_shot(
     };
 
     ShotPreview {
+        direction,
         max_landing: landing_for_die(die_strength),
         expected_landing: landing_for_die(expected_die),
         dispersion_radius: effective_dispersion(
@@ -528,6 +534,20 @@ mod tests {
                 Club::Driver.terrain_sensitivity(),
             )
         );
+    }
+
+    #[test]
+    fn preview_exposes_the_raw_aim_direction() {
+        // `direction` doit rester fiable même quand la distance visée est
+        // trop courte pour que max_landing/expected_landing bougent de la
+        // case de départ (ex: un putt de 1 case) — l'UI s'en sert pour un
+        // repère d'orientation qui ne doit jamais disparaître.
+        let hole = flat_fairway_hole();
+        let direction = Direction { dx: 0.6, dy: 0.8 };
+        let preview = preview_shot(&hole, hole.tee, Club::Putter, direction, 6);
+
+        assert_eq!(preview.direction.dx, direction.dx);
+        assert_eq!(preview.direction.dy, direction.dy);
     }
 
     #[test]

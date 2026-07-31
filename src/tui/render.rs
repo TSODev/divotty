@@ -1,4 +1,5 @@
-use crate::core::{Hole, Pos, ShotPreview, TerrainKind};
+use crate::core::{Direction, Hole, Pos, ShotPreview, TerrainKind};
+use crate::tui::format::{compass_arrow, compass_sector};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -96,6 +97,23 @@ fn sample_line(from: Pos, to: Pos) -> Vec<Pos> {
 /// visuel — le modèle de position (`Pos`, cases entières) ne change pas.
 const ZOOM_FACTOR: usize = 3;
 
+/// Décalage (colonne, ligne) dans le bloc zoomé où placer la flèche de
+/// visée : à l'opposé du centre, dans le secteur de boussole de la
+/// direction visée (même secteur que `compass_arrow`, pour que le glyphe et
+/// sa position restent cohérents). Généralisé à `zoom` plutôt que figé sur
+/// la valeur actuelle de `ZOOM_FACTOR`.
+fn compass_cell_offset(direction: Direction, zoom: usize) -> (u16, u16) {
+    let center = (zoom / 2) as i32;
+    let radius = center.max(1);
+    let angle = (compass_sector(direction) as f32) * 45.0_f32.to_radians();
+    let dx = (angle.cos() * radius as f32).round() as i32;
+    let dy = (angle.sin() * radius as f32).round() as i32;
+    (
+        (center + dx).clamp(0, zoom as i32 - 1) as u16,
+        (center + dy).clamp(0, zoom as i32 - 1) as u16,
+    )
+}
+
 impl<'a> Widget for CourseView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
@@ -175,15 +193,59 @@ impl<'a> Widget for CourseView<'a> {
                     }
                 }
 
-                if gx == self.ball.x && gy == self.ball.y {
-                    ch = '●';
-                    color = Color::Red;
-                    modifier = Modifier::empty();
+                let is_ball = gx == self.ball.x && gy == self.ball.y;
+                let base_x = inner.x + margin_x + (gcol * zoom) as u16;
+                let base_y = inner.y + margin_y + (grow * zoom) as u16;
+
+                // En zoom, la balle et le trou n'occupent plus qu'une seule
+                // sous-case du bloc `zoom`x`zoom` (au lieu de le remplir
+                // entièrement) : sur un putt de 1-2 cases, deux blocs pleins
+                // ne laissaient plus rien voir entre les deux. Le reste du
+                // bloc montre le terrain réel (sous la balle) ou le vert
+                // (autour du trou), et — pour la balle — une flèche de
+                // visée dans le secteur de la direction visée, fiable même
+                // quand `expected_landing` arrondit à la même case que le
+                // départ (voir `ShotPreview::direction`).
+                if zoom > 1 && (is_ball || terrain == TerrainKind::Hole) {
+                    let (fill_ch, fill_color) = if is_ball {
+                        (ch, color) // terrain réel déjà calculé sous la balle
+                    } else {
+                        terrain_style(TerrainKind::Green) // vert autour du trou
+                    };
+                    let center = ((zoom / 2) as u16, (zoom / 2) as u16);
+                    let arrow = is_ball
+                        .then(|| self.preview.map(|p| p.direction))
+                        .flatten()
+                        .map(|direction| (compass_cell_offset(direction, zoom), compass_arrow(direction)));
+
+                    for dy in 0..zoom as u16 {
+                        for dx in 0..zoom as u16 {
+                            let x = base_x + dx;
+                            let y = base_y + dy;
+                            if x >= inner.x + inner.width || y >= inner.y + inner.height {
+                                continue;
+                            }
+                            if (dx, dy) == center {
+                                let (marker, marker_color) =
+                                    if is_ball { ('●', Color::Red) } else { (ch, color) };
+                                buf.get_mut(x, y).set_char(marker).set_style(Style::default().fg(marker_color));
+                            } else if let Some((offset, glyph)) = arrow {
+                                if (dx, dy) == offset {
+                                    buf.get_mut(x, y)
+                                        .set_char(glyph.chars().next().unwrap())
+                                        .set_style(Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD));
+                                    continue;
+                                }
+                                buf.get_mut(x, y).set_char(fill_ch).set_style(Style::default().fg(fill_color));
+                            } else {
+                                buf.get_mut(x, y).set_char(fill_ch).set_style(Style::default().fg(fill_color));
+                            }
+                        }
+                    }
+                    continue;
                 }
 
                 let style = Style::default().fg(color).add_modifier(modifier);
-                let base_x = inner.x + margin_x + (gcol * zoom) as u16;
-                let base_y = inner.y + margin_y + (grow * zoom) as u16;
                 for dy in 0..zoom as u16 {
                     for dx in 0..zoom as u16 {
                         let x = base_x + dx;

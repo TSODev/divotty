@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regardless of distance. A short putt left by a good approach shot is
   now close to a sure thing (like a real-golf gimme); a long lag putt
   stays a genuine risk. Every other club is unaffected.
+- Aiming a very short putt (1-2 cells) is easier to read in zoom mode:
+  the ball and hole now each take up a single character in their zoomed
+  block instead of filling it entirely, and a small arrow next to the
+  ball points in the aimed direction — reliable even when the shot is too
+  short for the landing markers to visibly move off the ball's own cell.
 
 ## [0.2.0] - 2026-07-31
 
