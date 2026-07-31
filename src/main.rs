@@ -256,6 +256,19 @@ impl GameState {
         };
     }
 
+    /// Comme `cycle_club`, dans l'autre sens (`Shift+Tab`) — pratique pour
+    /// revenir au club précédent sans faire tout le tour.
+    fn cycle_club_reverse(&mut self) {
+        self.club = match self.club {
+            Club::Driver => Club::Putter,
+            Club::Wood => Club::Driver,
+            Club::Hybrid => Club::Wood,
+            Club::Iron => Club::Hybrid,
+            Club::Wedge => Club::Iron,
+            Club::Putter => Club::Wedge,
+        };
+    }
+
     /// Vrai si le dernier coup a atteint le trou — le joueur ne peut plus
     /// rien jouer tant qu'il n'a pas choisi de rejouer ou de retourner au
     /// menu (voir `run_loop`).
@@ -550,6 +563,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                         }
                         KeyCode::Char(' ') => state.play_shot(),
                         KeyCode::Tab => state.cycle_club(),
+                        KeyCode::BackTab => state.cycle_club_reverse(),
                         KeyCode::Char('s') | KeyCode::Char('S') => {
                             state.just_saved = save_game(state).is_ok();
                         }
@@ -669,6 +683,35 @@ mod tests {
         ] {
             state.cycle_club();
             assert_eq!(state.club, expected);
+        }
+    }
+
+    #[test]
+    fn cycle_club_reverse_goes_backwards_and_wraps_around() {
+        let mut state = test_state();
+        assert_eq!(state.club, Club::Driver);
+        for expected in [
+            Club::Putter,
+            Club::Wedge,
+            Club::Iron,
+            Club::Hybrid,
+            Club::Wood,
+            Club::Driver,
+        ] {
+            state.cycle_club_reverse();
+            assert_eq!(state.club, expected);
+        }
+    }
+
+    #[test]
+    fn cycle_club_reverse_undoes_cycle_club() {
+        let mut state = test_state();
+        for _ in 0..6 {
+            let before = state.club;
+            state.cycle_club();
+            state.cycle_club_reverse();
+            assert_eq!(state.club, before, "reverse doit annuler le cycle direct");
+            state.cycle_club(); // avance pour tester le club suivant
         }
     }
 

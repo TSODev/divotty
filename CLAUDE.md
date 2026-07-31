@@ -99,14 +99,17 @@ src/core/  → terrain.rs   (types + profils)
 src/tui/   → render.rs    (CourseView + Viewport, superpose le guide de trajectoire + halo de dispersion)
              sidebar.rs     (7 panneaux d'info : Titre, Trou, Score, Club, Dernier coup, Visée, Contrôles)
              menu.rs         (CourseMenuState : écran de sélection de parcours)
-             lang.rs          (Lang { En, Fr }, défaut En — bascule avec la touche L)
-             format.rs         (helpers d'affichage partagés, ex. étoiles de difficulté)
-             mod.rs             (ré-exports publics du module tui)
+             scorecard.rs     (ScorecardView : écran plein cadre de fin de partie, détail trou par trou + total)
+             lang.rs           (Lang { En, Fr }, défaut En — bascule avec la touche L)
+             format.rs          (helpers d'affichage partagés : étoiles de difficulté, couleur/texte de score)
+             mod.rs              (ré-exports publics du module tui)
 
 src/main.rs → `mod core; mod tui;` + menu de sélection → GameState → boucle
-              de jeu ; sauvegarde/reprise ; gestion clavier
+              de jeu (enchaînement des trous, écran de scorecard en fin de
+              partie) ; sauvegarde/reprise ; gestion clavier
 
-courses/demo → parcours d'exemple à 1 trou (course.yaml avec difficulty + hole_01.course)
+courses/demo   → parcours d'exemple à 1 trou (course.yaml avec difficulty + hole_01.course)
+courses/quick3 → parcours à 3 trous (par 3/4/5) pour tester l'enchaînement multi-trous
 ```
 
 **Historique** : c'était un workspace Cargo à 3 crates (`divotty-core`,
@@ -160,22 +163,37 @@ Fait et testé :
 - Quitter nécessite une double pression sur `q` (`qq`), au menu comme en
   jeu — un indice "Press q again to quit" s'affiche après la première
   pression, annulé par toute autre touche.
-- Boucle de jeu jouable sur un seul trou (flèches pour viser, Tab pour
-  changer de club, Espace pour jouer, S pour sauvegarder, L pour changer de
-  langue, qq pour quitter).
+- Boucle de jeu jouable sur un parcours multi-trous complet (flèches pour
+  viser, Tab pour changer de club, Espace pour jouer, S pour sauvegarder, L
+  pour changer de langue, qq pour quitter). `GameState` garde tous les
+  trous du `Course` (`holes: Vec<Hole>` + `current_hole()`), pas juste le
+  premier.
+- Enchaînement automatique des trous : une fois un trou terminé, `N`
+  (visible uniquement s'il en reste un) passe au suivant
+  (`GameState::advance_hole`, testé unitairement) — balle, visée, vent,
+  coups et club repartent à zéro comme pour un nouveau trou. Sur le
+  dernier trou, `Entrée` ("finir la partie") enregistre le score final et
+  affiche un écran de scorecard complet plein cadre (`tui::ScorecardView`,
+  `src/tui/scorecard.rs`) : détail trou par trou (nom, par, coups, label
+  Birdie/Bogey/etc.) + total, avant retour au menu — y compris pour un
+  parcours à un seul trou (le trou de démo inclus). `core::scoring::Scorecard`
+  (cumul coups/par/écart) est persisté dans `save.yaml`, donc reprendre une
+  partie multi-trous ne perd pas les trous déjà joués. Le panneau Score
+  affiche un total cumulé ("Total: N (±M)") dès qu'un parcours a plus d'un
+  trou.
+- Un deuxième parcours, `courses/quick3/` (3 trous, par 3/4/5, difficulté 2
+  étoiles), sert de format court pour tester l'enchaînement sans attendre
+  un 9 trous complet — voir `courses/demo/` pour l'exemple à un seul trou.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
-- Enchaînement de plusieurs trous (1/9/18) avec carte de score complète —
-  `GameState` ne joue toujours que `holes[0]` d'un `Course`, même si
-  `hole_index`/`hole_count` sont déjà suivis dans l'état (prêts pour cette
-  extension).
 - Système de "drop" plus réaliste (actuellement : retour pur et simple à la
   position de départ du coup — une vraie implémentation dropperait au dernier
   point de fairway valide le long de la trajectoire).
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
-  `nudge_aim`, `restart_hole`, `finished`) a maintenant 5 tests unitaires
-  dans `src/main.rs`, mais rien qui simule un vrai terminal/`crossterm`.
+  `nudge_aim`, `restart_hole`, `finished`, `advance_hole`) a maintenant 8
+  tests unitaires dans `src/main.rs`, mais rien qui simule un vrai
+  terminal/`crossterm`.
 
 ## Publication crates.io
 

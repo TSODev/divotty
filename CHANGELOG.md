@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   4 and 5 (par 12 total) with distinct orientations and hazards, meant as
   a fast way to exercise hole-to-hole chaining without playing a full
   9-hole round.
+- `Shift+Tab` cycles clubs backward (Putter → Wedge → ... → Driver),
+  complementing `Tab`'s forward cycle — no need to go all the way around
+  to reach the previous club.
 - Version number shown in the sidebar's title panel.
 - Sidebar panels now have rounded borders, a distinct accent color each,
   and colored/bold text that reacts to what's happening: the score panel
@@ -79,10 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tee and hole are easier to spot on the map: the hole is now a flag (⛳)
   instead of a barely-visible black disc, and the tee's `D` marker uses a
   bright, distinct color instead of plain white.
-- Course view (the map) is now framed with a border, like every other
-  sidebar panel, and is centered within that panel when the terminal is
-  wider than the course grid (it still follows the ball with no centering
-  once the grid no longer fits on screen).
+- Course view (the map) is now framed with a rounded border, like every
+  other sidebar panel, and is centered within that panel when the terminal
+  is wider than the course grid (it still follows the ball with no
+  centering once the grid no longer fits on screen).
 - Fairway is duller and the shot preview (trajectory guide, dispersion
   halo, landing marker) is brighter and bold, so aiming reads more clearly
   against the terrain. The green's `,` marker is now a bright `O`, clearly

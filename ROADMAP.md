@@ -28,7 +28,7 @@
       jamais exercé). Ajoutée de chaque côté du rough dans le trou de démo
       pour la tester en conditions réelles.
 
-## v0.2 — Parcours complets
+## v0.2 — Parcours complets (fait)
 - [x] Enchaînement automatique des trous d'un `Course` (1 → 9 → 18) —
       `GameState` garde désormais tous les trous (`holes: Vec<Hole>` +
       `current_hole()`) au lieu de ne jouer que `holes[0]`. Touche `N`
@@ -310,8 +310,7 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
   mieux) : contrairement au boost d'événement aléatoire ci-dessus, celui-ci
   récompenserait le skill plutôt que la chance — cohérent avec la
   direction déjà prise avec le vent/le putting (réduire le RNG pur, valoriser
-  la compétence). **Dépendance** : n'a de sens que si le boost s'applique
-  au trou suivant, donc attend l'enchaînement multi-trous (v0.2,
-  "Enchaînement automatique des trous") — pas de vrai "trou suivant"
-  aujourd'hui, `GameState` ne joue que `holes[0]`. À implémenter avec ou
-  après cet item plutôt qu'avant.
+  la compétence). L'enchaînement multi-trous (v0.2, fait) débloque
+  maintenant cet item : `GameState::advance_hole` est l'endroit naturel où
+  appliquer un boost au trou suivant (ex. dispersion réduite sur le
+  premier coup) si le trou qu'on vient de quitter était sous le par.

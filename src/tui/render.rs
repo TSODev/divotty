@@ -3,7 +3,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Widget},
+    widgets::{Block, BorderType, Borders, Widget},
 };
 
 /// Couleur + caractère affichés pour un type de terrain. Le fairway reste
@@ -98,7 +98,9 @@ const ZOOM_FACTOR: usize = 3;
 
 impl<'a> Widget for CourseView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = Block::default().borders(Borders::ALL);
+        let block = Block::default()
+            .border_type(BorderType::Rounded)
+            .borders(Borders::ALL);
         let inner = block.inner(area);
         block.render(area, buf);
 

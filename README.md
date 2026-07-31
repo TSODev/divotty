@@ -56,7 +56,7 @@ Menu controls:
 
 In-game controls:
 - **Left/right arrows**: adjust aim angle
-- **Tab**: change club (Driver → Wood → Hybrid → Iron → Wedge → Putter)
+- **Tab / Shift+Tab**: change club, forward or backward (Driver → Wood → Hybrid → Iron → Wedge → Putter)
 - **Space**: play the shot (rolls the dice)
 - **Z**: toggle map zoom (x3, off by default)
 - **S**: save the current game
