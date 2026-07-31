@@ -120,17 +120,29 @@
       (au lieu de le remplir en entier) — sur un putt de 1-2 cases, deux
       blocs pleins 3x3 ne laissaient plus de place pour voir quoi que ce
       soit entre les deux. Le reste du bloc de la balle montre le terrain
-      réel en dessous, celui du trou le vert environnant.
+      réel en dessous ; celui du trou est désormais un cadre en caractères
+      box-drawing à coins arrondis (`╭─╮│⚑│╰─╯`, `hole_frame_glyph()` dans
+      `render.rs` — mêmes glyphes que `BorderType::Rounded` utilisé partout
+      ailleurs dans l'interface) plutôt qu'un simple remplissage vert, pour
+      que la cible ressorte quel que soit le terrain autour (vert, rough...).
       Une flèche de visée (`format::compass_arrow`) apparaît dans le bloc
       de la balle, dans le secteur de la direction visée — dérivée de
       l'angle de visée brut (`ShotPreview::direction`, nouveau champ) plutôt
       que de `expected_landing`/`max_landing` arrondis, qui peuvent
       coïncider avec la case de départ sur un tout petit putt et perdre
-      l'info de direction. Le guide pointillé existant (`sample_line`,
-      résolution en cases entières) n'a pas été changé — pour une
-      trajectoire vraiment continue même sur 1 case, il faudrait
-      l'échantillonner à la résolution du zoom (sous-case), gardé comme
-      piste si la flèche seule ne suffit pas.
+      l'info de direction.
+      Généralisé ensuite à toute la surimpression d'aperçu (guide
+      pointillé, halo de dispersion, repère d'atterrissage) : en zoom, ces
+      marqueurs n'occupent plus eux non plus que la sous-case centrale du
+      bloc (au lieu de le remplir en entier) — un point de guide devenait
+      un bloc plein `···` au lieu d'un pointillé, pareil pour le halo et le
+      repère. Le reste du bloc montre systématiquement le terrain réel.
+      Reste une piste distincte, non retenue pour l'instant : le guide
+      (`sample_line`, résolution en cases entières) trace toujours un point
+      par case entière, donc 0-1 point sur un putt de 1-2 cases — pour une
+      trajectoire vraiment *continue* même sur 1 case, il faudrait
+      l'échantillonner à la résolution du zoom (sous-case), pas juste
+      centrer le point existant.
 - [x] Force du coup réglable par le joueur (`+`/`-`, 3 à 6, 6 = pleine
       puissance) : le tirage reste uniforme mais borné par le plafond
       choisi (`gen_range(1..=die_strength)`), pour éviter qu'un gros dé

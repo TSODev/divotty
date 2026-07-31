@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block instead of filling it entirely, and a small arrow next to the
   ball points in the aimed direction — reliable even when the shot is too
   short for the landing markers to visibly move off the ball's own cell.
+  The hole is also boxed in a small rounded frame (`╭─╮│⚑│╰─╯`, matching
+  the rounded borders used everywhere else in the UI) so it stands out
+  from whatever terrain surrounds it. The rest of the shot preview (the
+  trajectory guide dots, the dispersion halo, the landing marker) got the
+  same treatment: each now shows as a single character in its cell's
+  zoomed block instead of filling all of it, so a guide dot reads as a
+  dot again instead of a solid square.
+
+### Fixed
+- The ball marker disappeared after every shot when zoom was off — a
+  regression from the change above, which had moved where the marker gets
+  drawn into a branch that only ran while zoomed.
 
 ## [0.2.0] - 2026-07-31
 

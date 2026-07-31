@@ -114,6 +114,30 @@ fn compass_cell_offset(direction: Direction, zoom: usize) -> (u16, u16) {
     )
 }
 
+/// Caractère de cadre (box-drawing) pour la sous-case (dx, dy) d'un bloc
+/// zoomé de taille `zoom`, entourant le trou d'un cadre plutôt que de la
+/// couleur du terrain environnant — fait ressortir la cible quel que soit
+/// le terrain autour (vert, rough...). `None` pour le centre, où le
+/// drapeau reste affiché.
+fn hole_frame_glyph(dx: u16, dy: u16, zoom: usize) -> Option<char> {
+    let last = zoom as u16 - 1;
+    let is_left = dx == 0;
+    let is_right = dx == last;
+    let is_top = dy == 0;
+    let is_bottom = dy == last;
+    match (is_left, is_right, is_top, is_bottom) {
+        // Coins arrondis (mêmes glyphes que `BorderType::Rounded` utilisé
+        // partout ailleurs dans l'interface), pas des coins carrés.
+        (true, _, true, _) => Some('╭'),
+        (_, true, true, _) => Some('╮'),
+        (true, _, _, true) => Some('╰'),
+        (_, true, _, true) => Some('╯'),
+        _ if is_top || is_bottom => Some('─'),
+        _ if is_left || is_right => Some('│'),
+        _ => None,
+    }
+}
+
 impl<'a> Widget for CourseView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
@@ -164,7 +188,9 @@ impl<'a> Widget for CourseView<'a> {
                     continue;
                 };
 
-                let (mut ch, mut color) = terrain_style(terrain);
+                let (base_ch, base_color) = terrain_style(terrain);
+                let mut ch = base_ch;
+                let mut color = base_color;
                 let mut modifier = Modifier::empty();
                 // Le tee et le trou sont des repères qu'on ne veut jamais
                 // masquer derrière la surimpression de l'aperçu de coup
@@ -194,65 +220,72 @@ impl<'a> Widget for CourseView<'a> {
                 }
 
                 let is_ball = gx == self.ball.x && gy == self.ball.y;
+                if is_ball {
+                    ch = '●';
+                    color = Color::Red;
+                    modifier = Modifier::empty();
+                }
+
                 let base_x = inner.x + margin_x + (gcol * zoom) as u16;
                 let base_y = inner.y + margin_y + (grow * zoom) as u16;
 
-                // En zoom, la balle et le trou n'occupent plus qu'une seule
-                // sous-case du bloc `zoom`x`zoom` (au lieu de le remplir
-                // entièrement) : sur un putt de 1-2 cases, deux blocs pleins
-                // ne laissaient plus rien voir entre les deux. Le reste du
-                // bloc montre le terrain réel (sous la balle) ou le vert
-                // (autour du trou), et — pour la balle — une flèche de
-                // visée dans le secteur de la direction visée, fiable même
-                // quand `expected_landing` arrondit à la même case que le
-                // départ (voir `ShotPreview::direction`).
-                if zoom > 1 && (is_ball || terrain == TerrainKind::Hole) {
-                    let (fill_ch, fill_color) = if is_ball {
-                        (ch, color) // terrain réel déjà calculé sous la balle
-                    } else {
-                        terrain_style(TerrainKind::Green) // vert autour du trou
-                    };
-                    let center = ((zoom / 2) as u16, (zoom / 2) as u16);
-                    let arrow = is_ball
-                        .then(|| self.preview.map(|p| p.direction))
-                        .flatten()
-                        .map(|direction| (compass_cell_offset(direction, zoom), compass_arrow(direction)));
-
-                    for dy in 0..zoom as u16 {
-                        for dx in 0..zoom as u16 {
-                            let x = base_x + dx;
-                            let y = base_y + dy;
-                            if x >= inner.x + inner.width || y >= inner.y + inner.height {
-                                continue;
-                            }
-                            if (dx, dy) == center {
-                                let (marker, marker_color) =
-                                    if is_ball { ('●', Color::Red) } else { (ch, color) };
-                                buf.get_mut(x, y).set_char(marker).set_style(Style::default().fg(marker_color));
-                            } else if let Some((offset, glyph)) = arrow {
-                                if (dx, dy) == offset {
-                                    buf.get_mut(x, y)
-                                        .set_char(glyph.chars().next().unwrap())
-                                        .set_style(Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD));
-                                    continue;
-                                }
-                                buf.get_mut(x, y).set_char(fill_ch).set_style(Style::default().fg(fill_color));
-                            } else {
-                                buf.get_mut(x, y).set_char(fill_ch).set_style(Style::default().fg(fill_color));
-                            }
-                        }
+                if zoom == 1 {
+                    // Un seul caractère par case, comportement d'origine.
+                    if base_x < inner.x + inner.width && base_y < inner.y + inner.height {
+                        buf.get_mut(base_x, base_y)
+                            .set_char(ch)
+                            .set_style(Style::default().fg(color).add_modifier(modifier));
                     }
                     continue;
                 }
 
-                let style = Style::default().fg(color).add_modifier(modifier);
+                // En zoom, le centre du bloc affiche ce qui aurait été
+                // affiché sans zoom (`ch`/`color`/`modifier` ci-dessus, y
+                // compris la balle et toute surimpression de l'aperçu :
+                // guide pointillé, halo de dispersion, repère
+                // d'atterrissage) — le reste du bloc montre le terrain réel
+                // plutôt que de dupliquer le même marqueur sur les
+                // `zoom`x`zoom` caractères. Sur un putt de 1-2 cases, deux
+                // blocs pleins ne laissaient plus rien voir entre eux ; même
+                // chose pour un guide pointillé qui devenait un bloc plein
+                // plutôt qu'un pointillé. Exceptions : la balle garde une
+                // flèche de visée dans le secteur visé, et le trou un cadre
+                // à la place du remplissage de terrain.
+                let center = ((zoom / 2) as u16, (zoom / 2) as u16);
+                let arrow = is_ball
+                    .then(|| self.preview.map(|p| p.direction))
+                    .flatten()
+                    .map(|direction| (compass_cell_offset(direction, zoom), compass_arrow(direction)));
+                let is_hole = terrain == TerrainKind::Hole;
+
                 for dy in 0..zoom as u16 {
                     for dx in 0..zoom as u16 {
                         let x = base_x + dx;
                         let y = base_y + dy;
-                        if x < inner.x + inner.width && y < inner.y + inner.height {
-                            buf.get_mut(x, y).set_char(ch).set_style(style);
+                        if x >= inner.x + inner.width || y >= inner.y + inner.height {
+                            continue;
                         }
+                        if (dx, dy) == center {
+                            buf.get_mut(x, y)
+                                .set_char(ch)
+                                .set_style(Style::default().fg(color).add_modifier(modifier));
+                            continue;
+                        }
+                        if let Some((offset, glyph)) = arrow {
+                            if (dx, dy) == offset {
+                                buf.get_mut(x, y)
+                                    .set_char(glyph.chars().next().unwrap())
+                                    .set_style(Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD));
+                                continue;
+                            }
+                        }
+                        if is_hole {
+                            if let Some(frame) = hole_frame_glyph(dx, dy, zoom) {
+                                buf.get_mut(x, y).set_char(frame).set_style(Style::default().fg(Color::White));
+                                continue;
+                            }
+                        }
+                        buf.get_mut(x, y).set_char(base_ch).set_style(Style::default().fg(base_color));
                     }
                 }
             }
