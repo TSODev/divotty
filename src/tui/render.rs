@@ -17,7 +17,7 @@ use ratatui::{
 /// emoji par défaut (ex: `⛳`, U+26F3) s'affiche sur 2 colonnes dans la
 /// plupart des terminaux et désaligne tout ce qui suit sur la ligne,
 /// surtout visible avec le zoom qui le répète plusieurs fois d'affilée.
-fn terrain_style(kind: TerrainKind) -> (char, Color) {
+pub(crate) fn terrain_style(kind: TerrainKind) -> (char, Color) {
     match kind {
         TerrainKind::Tee => ('D', Color::LightCyan),
         TerrainKind::Fairway => ('.', Color::Rgb(0, 90, 0)),

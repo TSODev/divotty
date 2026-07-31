@@ -17,7 +17,7 @@ pub struct Pos {
 pub struct HoleMeta {
     pub name: String,
     pub par: u8,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Dimensions de la grille ASCII déclarée dans ce fichier, si le trou
     /// n'utilise pas le canevas 100x60 complet. `None` (valeur par défaut,
@@ -26,9 +26,9 @@ pub struct HoleMeta {
     /// La petite grille est centrée dans le canevas complet une fois parsée
     /// (voir `Hole::parse`), donc `shot.rs`/`render.rs` ne voient jamais que
     /// des `Hole` toujours 100x60.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<usize>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<usize>,
 }
 
@@ -209,6 +209,37 @@ impl Hole {
 
     pub fn terrain_at(&self, pos: Pos) -> Option<TerrainKind> {
         self.tiles.get(pos.y)?.get(pos.x).copied()
+    }
+
+    /// Sérialise ce trou vers le format `.course` (frontmatter YAML + grille
+    /// ASCII) — inverse de `Hole::parse`. Si `meta.width`/`meta.height` sont
+    /// déclarés, seule la sous-grille correspondante (au même offset de
+    /// centrage que `Hole::parse`) est réécrite ; sinon la grille 100x60
+    /// complète l'est. Utilisée par le builder de trous (voir `ROADMAP.md`)
+    /// pour produire un fichier valide par construction avant de l'écrire
+    /// sur disque : sauvegarder, c'est appeler cette fonction puis vérifier
+    /// que `Hole::parse` du résultat réussit.
+    pub fn to_course_string(&self) -> String {
+        let mut meta_yaml =
+            serde_yaml::to_string(&self.meta).expect("HoleMeta se sérialise toujours en YAML");
+        if !meta_yaml.ends_with('\n') {
+            meta_yaml.push('\n');
+        }
+
+        let declared_w = self.meta.width.unwrap_or(COURSE_WIDTH);
+        let declared_h = self.meta.height.unwrap_or(COURSE_HEIGHT);
+        let offset_x = (COURSE_WIDTH - declared_w) / 2;
+        let offset_y = (COURSE_HEIGHT - declared_h) / 2;
+
+        let lines: Vec<String> = (0..declared_h)
+            .map(|y| {
+                (0..declared_w)
+                    .map(|x| self.tiles[offset_y + y][offset_x + x].to_char())
+                    .collect()
+            })
+            .collect();
+
+        format!("{}---\n{}\n", meta_yaml, lines.join("\n"))
     }
 }
 
@@ -495,5 +526,34 @@ mod tests {
         let hole = Hole::parse(&raw).expect("le trou plein format doit parser");
         assert_eq!(hole.tee, Pos { x: 0, y: 0 });
         assert_eq!(hole.hole_pos, Pos { x: COURSE_WIDTH - 1, y: COURSE_HEIGHT - 1 });
+    }
+
+    #[test]
+    fn to_course_string_roundtrips_the_demo_hole() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("courses/demo");
+        let course = Course::load_from_dir(&dir).expect("le parcours de démo doit charger");
+        let hole = &course.holes[0];
+
+        let reparsed = Hole::parse(&hole.to_course_string())
+            .expect("la sortie de to_course_string doit re-parser");
+
+        assert_eq!(reparsed.meta.name, hole.meta.name);
+        assert_eq!(reparsed.meta.par, hole.meta.par);
+        assert_eq!(reparsed.tee, hole.tee);
+        assert_eq!(reparsed.hole_pos, hole.hole_pos);
+        assert_eq!(reparsed.tiles, hole.tiles);
+    }
+
+    #[test]
+    fn to_course_string_roundtrips_a_small_declared_hole() {
+        let raw = build_small_raw(20, 10);
+        let hole = Hole::parse(&raw).expect("le petit trou doit parser");
+
+        let reparsed = Hole::parse(&hole.to_course_string())
+            .expect("la sortie de to_course_string doit re-parser");
+
+        assert_eq!(reparsed.tee, hole.tee);
+        assert_eq!(reparsed.hole_pos, hole.hole_pos);
+        assert_eq!(reparsed.tiles, hole.tiles);
     }
 }

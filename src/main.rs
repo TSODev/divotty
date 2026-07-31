@@ -8,10 +8,13 @@ use crossterm::{
     execute,
 };
 use crate::core::{
-    preview_shot, resolve_shot, Club, Course, Direction, Hole, HoleScore, Pos, Scorecard, Shot,
-    ShotResult, Wind,
+    preview_shot, resolve_shot, Club, Course, Direction, Hole, HoleMeta, HoleScore, Pos, Scorecard,
+    Shot, ShotResult, TerrainKind, Wind, COURSE_HEIGHT, COURSE_WIDTH,
 };
-use crate::tui::{CourseMenuState, CourseView, Lang, ScorecardView, SidebarState, Viewport};
+use crate::tui::{
+    BuilderHeaderView, BuilderMode, BuilderOrientation, BuilderSetupView, BuilderView,
+    CourseMenuState, CourseView, Lang, ScorecardView, SidebarState, Viewport,
+};
 use rand::Rng;
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction as LayoutDirection, Layout}, Terminal};
 use serde::{Deserialize, Serialize};
@@ -455,6 +458,15 @@ fn main() -> Result<()> {
                         }
                     }
                 }
+                MenuChoice::NewHole => {
+                    let Some(mut builder) = setup_builder(&mut terminal, &mut lang)? else {
+                        continue;
+                    };
+                    match run_builder(&mut terminal, &mut builder)? {
+                        BuilderExit::Quit => return Ok(()),
+                        BuilderExit::BackToMenu => continue,
+                    }
+                }
             }
         }
     })();
@@ -469,6 +481,7 @@ fn main() -> Result<()> {
 enum MenuChoice {
     Play(usize),
     Resume,
+    NewHole,
     Quit,
 }
 
@@ -531,6 +544,7 @@ fn select_course<B: ratatui::backend::Backend>(
                     KeyCode::Char('c') | KeyCode::Char('C') if has_save => {
                         return Ok(MenuChoice::Resume)
                     }
+                    KeyCode::Char('e') | KeyCode::Char('E') => return Ok(MenuChoice::NewHole),
                     KeyCode::Up => selected = selected.saturating_sub(1),
                     KeyCode::Down => selected = (selected + 1).min(course_refs.len().saturating_sub(1)),
                     KeyCode::Enter => return Ok(MenuChoice::Play(selected)),
@@ -725,6 +739,351 @@ fn show_scorecard<B: ratatui::backend::Backend>(
             }
         }
     }
+}
+
+/// Comment on quitte l'écran d'édition : arrêt complet du programme, ou
+/// retour au menu (qq, ou sauvegarde réussie qui ramène au menu).
+enum BuilderExit {
+    Quit,
+    BackToMenu,
+}
+
+/// Le golf n'a pas vraiment de par en dessous de 3 — le reste du jeu
+/// (distances de club, les autres parcours) est calibré pour des pars
+/// réalistes (3 à 7+). Plancher appliqué au par choisi à l'en-tête du
+/// builder (`setup_builder`) : sans lui, `Down` pouvait descendre jusqu'à 1,
+/// une valeur qui n'a pas de sens golfique.
+const MIN_HOLE_PAR: u8 = 3;
+
+/// Taille de grille suggérée à partir du par visé, cohérente avec les
+/// distances déjà utilisées par `tools/make_hole_canvas.py` (rayons idéaux
+/// tee-green par par) : un par court n'a pas besoin d'un canevas 100x60
+/// entièrement hors-limites autour d'un tout petit trou. Le "petit côté"
+/// est dérivé proportionnellement du "grand côté" (rapport 3/5, celui du
+/// canevas complet 100x60 — `COURSE_HEIGHT`/`COURSE_WIDTH`) plutôt que
+/// d'être une constante fixe indépendante du par. Le canevas n'étant pas
+/// carré (100x60), le plafond du "grand côté" dépend de l'orientation
+/// (100 en horizontal, seulement 60 en vertical) : il est donc clampé
+/// *avant* d'en dériver le petit côté, pas après — sinon un par 7+ en
+/// vertical donnerait un carré 60x60 (grand côté rabattu de 100 à 60, puis
+/// petit côté calculé sur l'ancienne valeur 100 non clampée) plutôt qu'un
+/// couloir 36x60 correctement proportionné. Avec ce clampage dans le bon
+/// ordre, un par 7+ en horizontal atteint exactement le canevas 100x60
+/// plein (aucune taille déclarée n'est alors plus restrictive que le
+/// comportement par défaut).
+fn suggested_declared_size(par: u8, orientation: BuilderOrientation) -> (usize, usize) {
+    let raw_long_side = match par {
+        0..=MIN_HOLE_PAR => 25,
+        4 => 55,
+        5 => 70,
+        6 => 85,
+        _ => 100,
+    };
+    let (long_max, short_max) = match orientation {
+        BuilderOrientation::Horizontal => (COURSE_WIDTH, COURSE_HEIGHT),
+        BuilderOrientation::Vertical => (COURSE_HEIGHT, COURSE_WIDTH),
+    };
+    let long_side = raw_long_side.min(long_max);
+    let short_side = (long_side * 3 / 5).min(short_max);
+    match orientation {
+        BuilderOrientation::Horizontal => (long_side, short_side),
+        BuilderOrientation::Vertical => (short_side, long_side),
+    }
+}
+
+/// État de l'éditeur de trou (voir `ROADMAP.md`, "Builder de trous"). Édite
+/// un seul fichier `.course` à la fois : grille locale (taille déclarée à
+/// l'en-tête, pas nécessairement 100x60 pleine), curseur, historique
+/// d'annulation. La sauvegarde sérialise directement cet état — pas besoin
+/// de construire un `Hole` complet, qui exigerait un tee/trou déjà
+/// validés — et valide le résultat via `Hole::parse` avant d'écrire sur le
+/// disque : sauvegarder, c'est réussir ce parsing.
+struct BuilderState {
+    name: String,
+    par: u8,
+    orientation: BuilderOrientation,
+    width: usize,
+    height: usize,
+    tiles: Vec<Vec<TerrainKind>>,
+    cursor: Pos,
+    undo_stack: Vec<(Pos, TerrainKind)>,
+    mode: BuilderMode,
+    text_input: String,
+    message: Option<String>,
+    lang: Lang,
+    quit_confirm: bool,
+}
+
+impl BuilderState {
+    fn new(par: u8, orientation: BuilderOrientation, lang: Lang) -> Self {
+        let (width, height) = suggested_declared_size(par, orientation);
+        let name = match lang {
+            Lang::En => "New hole".to_string(),
+            Lang::Fr => "Nouveau trou".to_string(),
+        };
+        BuilderState {
+            name,
+            par,
+            orientation,
+            width,
+            height,
+            tiles: vec![vec![TerrainKind::OutOfBounds; width]; height],
+            cursor: Pos { x: 0, y: 0 },
+            undo_stack: Vec::new(),
+            mode: BuilderMode::Drawing,
+            text_input: String::new(),
+            message: None,
+            lang,
+            quit_confirm: false,
+        }
+    }
+
+    /// Peint la case sous le curseur avec `terrain` (empile l'ancienne
+    /// valeur pour l'annulation) puis avance le curseur d'un cran dans le
+    /// sens de `orientation` — ligne par ligne en horizontal, colonne par
+    /// colonne en vertical, comme du texte avec retour à la ligne. S'arrête
+    /// net à la dernière case plutôt que de boucler au début.
+    fn type_terrain(&mut self, terrain: TerrainKind) {
+        let old = self.tiles[self.cursor.y][self.cursor.x];
+        self.undo_stack.push((self.cursor, old));
+        self.tiles[self.cursor.y][self.cursor.x] = terrain;
+        self.advance_cursor();
+    }
+
+    fn advance_cursor(&mut self) {
+        match self.orientation {
+            BuilderOrientation::Horizontal => {
+                if self.cursor.x + 1 < self.width {
+                    self.cursor.x += 1;
+                } else if self.cursor.y + 1 < self.height {
+                    self.cursor.y += 1;
+                    self.cursor.x = 0;
+                }
+            }
+            BuilderOrientation::Vertical => {
+                if self.cursor.y + 1 < self.height {
+                    self.cursor.y += 1;
+                } else if self.cursor.x + 1 < self.width {
+                    self.cursor.x += 1;
+                    self.cursor.y = 0;
+                }
+            }
+        }
+    }
+
+    /// Dépile la dernière case peinte, restaure son ancien terrain, et
+    /// replace le curseur dessus.
+    fn undo(&mut self) {
+        if let Some((pos, old)) = self.undo_stack.pop() {
+            self.tiles[pos.y][pos.x] = old;
+            self.cursor = pos;
+        }
+    }
+
+    fn move_cursor(&mut self, dx: i32, dy: i32) {
+        let nx = self.cursor.x as i32 + dx;
+        let ny = self.cursor.y as i32 + dy;
+        if nx >= 0 && (nx as usize) < self.width {
+            self.cursor.x = nx as usize;
+        }
+        if ny >= 0 && (ny as usize) < self.height {
+            self.cursor.y = ny as usize;
+        }
+    }
+
+    /// Sérialise l'état courant vers le format `.course` (frontmatter YAML +
+    /// grille ASCII) — même structure que `Hole::to_course_string`, mais
+    /// construite directement depuis l'état d'édition puisqu'aucun `Hole`
+    /// complet n'existe encore avant que la sauvegarde ait réussi.
+    fn to_course_raw(&self) -> String {
+        let declare_size = self.width != COURSE_WIDTH || self.height != COURSE_HEIGHT;
+        let meta = HoleMeta {
+            name: self.name.clone(),
+            par: self.par,
+            description: None,
+            width: declare_size.then_some(self.width),
+            height: declare_size.then_some(self.height),
+        };
+        let mut meta_yaml =
+            serde_yaml::to_string(&meta).expect("HoleMeta se sérialise toujours en YAML");
+        if !meta_yaml.ends_with('\n') {
+            meta_yaml.push('\n');
+        }
+        let lines: Vec<String> = self
+            .tiles
+            .iter()
+            .map(|row| row.iter().map(|t| t.to_char()).collect::<String>())
+            .collect();
+        format!("{}---\n{}\n", meta_yaml, lines.join("\n"))
+    }
+}
+
+/// Petit écran d'en-tête avant de dessiner un nouveau trou : demande le par
+/// visé (seul champ requis) et l'orientation, qui suggèrent ensemble une
+/// taille de grille. `None` si annulé (Échap, retour au menu).
+fn setup_builder<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    lang: &mut Lang,
+) -> Result<Option<BuilderState>> {
+    let mut par: u8 = 4;
+    let mut orientation = BuilderOrientation::Horizontal;
+
+    loop {
+        terminal.draw(|frame| {
+            frame.render_widget(
+                BuilderSetupView {
+                    lang: *lang,
+                    par,
+                    orientation,
+                    grid_size: suggested_declared_size(par, orientation),
+                },
+                frame.size(),
+            );
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Esc => return Ok(None),
+                    KeyCode::Enter => return Ok(Some(BuilderState::new(par, orientation, *lang))),
+                    KeyCode::Up => par = (par + 1).min(9),
+                    KeyCode::Down => par = par.saturating_sub(1).max(MIN_HOLE_PAR),
+                    KeyCode::Left | KeyCode::Right => orientation = orientation.toggled(),
+                    KeyCode::Char('l') | KeyCode::Char('L') => *lang = lang.next(),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// Boucle principale de l'écran d'édition : rendu (en-tête + grille),
+/// frappe directe des caractères de terrain (peinture + avancée
+/// automatique), déplacement libre au clavier, annulation, renommage,
+/// sauvegarde.
+fn run_builder<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    state: &mut BuilderState,
+) -> Result<BuilderExit> {
+    loop {
+        terminal.draw(|frame| {
+            let rows = Layout::default()
+                .direction(LayoutDirection::Vertical)
+                .constraints([Constraint::Length(5), Constraint::Min(0)])
+                .split(frame.size());
+
+            frame.render_widget(
+                BuilderHeaderView {
+                    lang: state.lang,
+                    name: &state.name,
+                    par: state.par,
+                    orientation: state.orientation,
+                    mode: state.mode,
+                    text_input: &state.text_input,
+                    message: state.message.as_deref(),
+                    quit_confirm: state.quit_confirm,
+                },
+                rows[0],
+            );
+
+            frame.render_widget(
+                BuilderView {
+                    tiles: &state.tiles,
+                    cursor: state.cursor,
+                    viewport_w: rows[1].width.saturating_sub(2) as usize,
+                    viewport_h: rows[1].height.saturating_sub(2) as usize,
+                },
+                rows[1],
+            );
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                match state.mode {
+                    BuilderMode::Drawing => {
+                        state.message = None;
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                                if state.quit_confirm {
+                                    return Ok(BuilderExit::Quit);
+                                }
+                                state.quit_confirm = true;
+                                continue;
+                            }
+                            KeyCode::Esc => return Ok(BuilderExit::BackToMenu),
+                            KeyCode::Up => state.move_cursor(0, -1),
+                            KeyCode::Down => state.move_cursor(0, 1),
+                            KeyCode::Left => state.move_cursor(-1, 0),
+                            KeyCode::Right => state.move_cursor(1, 0),
+                            KeyCode::Char('u') | KeyCode::Char('U') => state.undo(),
+                            KeyCode::Char('n') | KeyCode::Char('N') => {
+                                state.text_input.clear();
+                                state.mode = BuilderMode::EditingName;
+                            }
+                            KeyCode::Char('s') | KeyCode::Char('S') => {
+                                state.text_input.clear();
+                                state.mode = BuilderMode::EnteringSavePath;
+                            }
+                            KeyCode::Char(c) => {
+                                if let Some(terrain) = TerrainKind::from_char(c) {
+                                    state.type_terrain(terrain);
+                                }
+                            }
+                            _ => {}
+                        }
+                        state.quit_confirm = false;
+                    }
+                    BuilderMode::EditingName => match key.code {
+                        KeyCode::Enter => {
+                            let trimmed = state.text_input.trim();
+                            if !trimmed.is_empty() {
+                                state.name = trimmed.to_string();
+                            }
+                            state.mode = BuilderMode::Drawing;
+                        }
+                        KeyCode::Esc => state.mode = BuilderMode::Drawing,
+                        KeyCode::Backspace => {
+                            state.text_input.pop();
+                        }
+                        KeyCode::Char(c) => state.text_input.push(c),
+                        _ => {}
+                    },
+                    BuilderMode::EnteringSavePath => match key.code {
+                        KeyCode::Enter => {
+                            let path = state.text_input.trim().to_string();
+                            if path.is_empty() {
+                                state.mode = BuilderMode::Drawing;
+                                continue;
+                            }
+                            match save_builder(state, Path::new(&path)) {
+                                Ok(()) => return Ok(BuilderExit::BackToMenu),
+                                Err(err) => {
+                                    state.message = Some(err.to_string());
+                                    state.mode = BuilderMode::Drawing;
+                                }
+                            }
+                        }
+                        KeyCode::Esc => state.mode = BuilderMode::Drawing,
+                        KeyCode::Backspace => {
+                            state.text_input.pop();
+                        }
+                        KeyCode::Char(c) => state.text_input.push(c),
+                        _ => {}
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// Sérialise `state` et valide le résultat via `Hole::parse` avant de
+/// l'écrire sur le disque — sauvegarder, c'est réussir ce parsing (voir
+/// `BuilderState::to_course_raw`). N'écrit rien si la validation échoue.
+fn save_builder(state: &BuilderState, path: &Path) -> Result<()> {
+    let raw = state.to_course_raw();
+    Hole::parse(&raw)?;
+    std::fs::write(path, raw)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1053,5 +1412,149 @@ mod tests {
             quick3.holes.iter().map(|h| h.meta.par as u32).sum::<u32>(),
             12
         );
+    }
+
+    #[test]
+    fn suggested_declared_size_swaps_sides_with_orientation() {
+        // Par 4 (long côté 55) tient sans être écrêté dans les deux sens
+        // (largeur max 100, hauteur max 60) — un bon cas pour vérifier que
+        // l'orientation échange proprement largeur/hauteur.
+        let (hw, hh) = suggested_declared_size(4, BuilderOrientation::Horizontal);
+        let (vw, vh) = suggested_declared_size(4, BuilderOrientation::Vertical);
+        assert_eq!((hw, hh), (vh, vw));
+    }
+
+    #[test]
+    fn suggested_declared_size_never_exceeds_the_full_canvas() {
+        for par in 0..=9u8 {
+            for orientation in [BuilderOrientation::Horizontal, BuilderOrientation::Vertical] {
+                let (w, h) = suggested_declared_size(par, orientation);
+                assert!(w <= COURSE_WIDTH && h <= COURSE_HEIGHT);
+            }
+        }
+    }
+
+    #[test]
+    fn suggested_declared_size_reaches_the_full_canvas_at_par_7_horizontal() {
+        // Le petit côté est dérivé proportionnellement du grand côté (voir
+        // `suggested_declared_size`) : à par 7+ en horizontal, le grand
+        // côté sature à 100 (COURSE_WIDTH), donc le petit côté doit saturer
+        // à 60 (COURSE_HEIGHT) — pas rester bloqué à une constante fixe
+        // indépendante du par (bug corrigé après un signalement : le petit
+        // côté restait toujours 30, quel que soit le par choisi).
+        assert_eq!(
+            suggested_declared_size(7, BuilderOrientation::Horizontal),
+            (COURSE_WIDTH, COURSE_HEIGHT)
+        );
+    }
+
+    #[test]
+    fn suggested_declared_size_caps_the_long_side_before_scaling_when_vertical() {
+        // Le canevas n'est pas carré (100x60) : en vertical, le grand côté
+        // ne peut jamais dépasser 60 (COURSE_HEIGHT), même à par 7+ où le
+        // grand côté "brut" viserait 100. Il doit être clampé à 60 *avant*
+        // d'en dériver le petit côté (36 = 60*3/5), pas après (ce qui
+        // donnerait à tort un carré 60x60).
+        assert_eq!(
+            suggested_declared_size(7, BuilderOrientation::Vertical),
+            (36, COURSE_HEIGHT)
+        );
+    }
+
+    #[test]
+    fn suggested_declared_size_shrinks_both_sides_together_for_shorter_pars() {
+        // Les deux côtés doivent grandir ensemble avec le par, pas
+        // seulement le grand côté.
+        let (w3, h3) = suggested_declared_size(3, BuilderOrientation::Horizontal);
+        let (w5, h5) = suggested_declared_size(5, BuilderOrientation::Horizontal);
+        assert!(w3 < w5 && h3 < h5);
+    }
+
+    #[test]
+    fn typing_terrain_paints_and_advances_horizontally_then_wraps() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 3;
+        builder.height = 2;
+        builder.tiles = vec![vec![TerrainKind::OutOfBounds; 3]; 2];
+        builder.cursor = Pos { x: 2, y: 0 };
+
+        builder.type_terrain(TerrainKind::Fairway);
+        assert_eq!(builder.tiles[0][2], TerrainKind::Fairway);
+        // Fin de ligne : passe au début de la suivante plutôt que de boucler
+        // sur la même ligne.
+        assert_eq!(builder.cursor, Pos { x: 0, y: 1 });
+    }
+
+    #[test]
+    fn typing_terrain_stops_at_the_last_cell_instead_of_wrapping_around() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 2;
+        builder.height = 1;
+        builder.tiles = vec![vec![TerrainKind::OutOfBounds; 2]; 1];
+        builder.cursor = Pos { x: 1, y: 0 };
+
+        builder.type_terrain(TerrainKind::Bunker);
+        assert_eq!(builder.cursor, Pos { x: 1, y: 0 }, "dernière case : le curseur ne doit pas boucler");
+    }
+
+    #[test]
+    fn typing_terrain_advances_vertically_then_wraps_to_the_next_column() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Vertical, Lang::En);
+        builder.width = 2;
+        builder.height = 2;
+        builder.tiles = vec![vec![TerrainKind::OutOfBounds; 2]; 2];
+        builder.cursor = Pos { x: 0, y: 1 };
+
+        builder.type_terrain(TerrainKind::Water);
+        assert_eq!(builder.tiles[1][0], TerrainKind::Water);
+        assert_eq!(builder.cursor, Pos { x: 1, y: 0 });
+    }
+
+    #[test]
+    fn undo_restores_the_previous_terrain_and_moves_the_cursor_back() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 3;
+        builder.height = 1;
+        builder.tiles = vec![vec![TerrainKind::Rough; 3]];
+        builder.cursor = Pos { x: 0, y: 0 };
+
+        builder.type_terrain(TerrainKind::Fairway);
+        assert_eq!(builder.tiles[0][0], TerrainKind::Fairway);
+        assert_eq!(builder.cursor, Pos { x: 1, y: 0 });
+
+        builder.undo();
+        assert_eq!(builder.tiles[0][0], TerrainKind::Rough, "l'ancien terrain doit être restauré");
+        assert_eq!(builder.cursor, Pos { x: 0, y: 0 }, "le curseur doit revenir sur la case annulée");
+    }
+
+    #[test]
+    fn move_cursor_is_clamped_to_the_grid_bounds() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 3;
+        builder.height = 3;
+        builder.tiles = vec![vec![TerrainKind::OutOfBounds; 3]; 3];
+        builder.cursor = Pos { x: 0, y: 0 };
+
+        builder.move_cursor(-1, -1);
+        assert_eq!(builder.cursor, Pos { x: 0, y: 0 }, "ne doit pas sortir de la grille en haut/à gauche");
+
+        builder.cursor = Pos { x: 2, y: 2 };
+        builder.move_cursor(1, 1);
+        assert_eq!(builder.cursor, Pos { x: 2, y: 2 }, "ne doit pas sortir de la grille en bas/à droite");
+    }
+
+    #[test]
+    fn to_course_raw_produces_a_file_that_hole_parse_accepts() {
+        let mut builder = BuilderState::new(3, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 5;
+        builder.height = 3;
+        builder.tiles = vec![vec![TerrainKind::Fairway; 5]; 3];
+        builder.tiles[1][0] = TerrainKind::Tee;
+        builder.tiles[1][4] = TerrainKind::Hole;
+
+        let raw = builder.to_course_raw();
+        let hole = Hole::parse(&raw).expect("un trou valide doit parser");
+        assert_eq!(hole.meta.par, 3);
+        assert_eq!(hole.tee, Pos { x: (COURSE_WIDTH - 5) / 2, y: (COURSE_HEIGHT - 3) / 2 + 1 });
     }
 }

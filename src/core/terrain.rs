@@ -127,4 +127,46 @@ impl TerrainKind {
             _ => return None,
         })
     }
+
+    /// Inverse de `from_char` — utilisé pour réécrire une grille en `.course`
+    /// (ex. `Hole::to_course_string`, builder de trous).
+    pub fn to_char(self) -> char {
+        match self {
+            TerrainKind::Tee => 'D',
+            TerrainKind::Fairway => '.',
+            TerrainKind::Rough => '=',
+            TerrainKind::Bunker => 'B',
+            TerrainKind::Water => '~',
+            TerrainKind::Tree => 'T',
+            TerrainKind::Green => 'G',
+            TerrainKind::Hole => 'H',
+            TerrainKind::OutOfBounds => ' ',
+            TerrainKind::PenaltyZone => 'X',
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_KINDS: [TerrainKind; 10] = [
+        TerrainKind::Tee,
+        TerrainKind::Fairway,
+        TerrainKind::Rough,
+        TerrainKind::Bunker,
+        TerrainKind::Water,
+        TerrainKind::Tree,
+        TerrainKind::Green,
+        TerrainKind::Hole,
+        TerrainKind::OutOfBounds,
+        TerrainKind::PenaltyZone,
+    ];
+
+    #[test]
+    fn to_char_and_from_char_roundtrip_for_every_terrain_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(TerrainKind::from_char(kind.to_char()), Some(kind));
+        }
+    }
 }

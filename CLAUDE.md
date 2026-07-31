@@ -253,13 +253,27 @@ Fait et testé :
   contre la hauteur attendue (`CourseError::BadRowCount`) — ce n'était pas
   le cas avant, un trou avec trop/pas assez de lignes aurait pu parser
   silencieusement avec la mauvaise hauteur.
+- Builder de trous (phases 1-8 sur 11, voir `ROADMAP.md` pour le détail et
+  ce qui reste) : depuis le menu (`E`), un en-tête minimal (par obligatoire,
+  orientation) suggère une taille de grille (`suggested_declared_size`),
+  puis un trou se dessine entièrement au clavier dans `BuilderState`
+  (`src/main.rs`) — taper un caractère de terrain valide peint la case et
+  avance automatiquement le curseur (ligne par ligne ou colonne par
+  colonne selon l'orientation), les flèches déplacent librement, `U`
+  annule, `N` renomme, `S` sauvegarde. La sauvegarde sérialise l'état
+  (`BuilderState::to_course_raw`) et valide via `Hole::parse` avant
+  d'écrire sur disque — un fichier produit par le builder est donc
+  toujours un fichier que le jeu sait déjà charger, vérifié en tmux
+  (trou créé, sauvegardé, rechargé et joué de bout en bout). Ne charge pas
+  encore un fichier existant pour modification/duplication (reste à
+  faire, phase 9).
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 17 tests unitaires dans
-  `src/main.rs` (55 au total avec `core`), mais rien qui simule un vrai
+  `adjust_die_strength`...) a maintenant 28 tests unitaires dans
+  `src/main.rs` (69 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io

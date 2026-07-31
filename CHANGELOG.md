@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   centered automatically in the full canvas, surrounded by out-of-bounds —
   no more forcing every short hole to fill 100x60 by hand. Existing files
   that don't declare a size are completely unaffected.
+- A first version of the in-game hole builder: press `E` from the course
+  menu, pick a par and an orientation (a suggested grid size follows), then
+  draw the hole entirely from the keyboard — typing a terrain character
+  (`.`/`=`/`B`/`~`/`T`/`G`/`X`/`D`/`H`) paints the current cell and
+  auto-advances to the next one, arrows move freely, `U` undoes the last
+  cell, `N` renames, `S` saves. A saved file is always one the game can
+  already load, since saving validates it the same way loading does. Not
+  yet supported: loading an existing `.course` file to edit or duplicate it
+  (coming in a follow-up).
 
 ### Changed
 - Putting is less of a coin flip now: the Putter's accuracy improves the

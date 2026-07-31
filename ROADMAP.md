@@ -266,39 +266,156 @@
       fichier 100x60 sans `width`/`height` déclarés) et vérifié
       visuellement (trou 20x12 joué en tmux : tee/trou/trajectoire/coup
       tous corrects, hors-limites tout autour).
-- [ ] Builder de trous : éditeur visuel intégré au TUI plutôt qu'un
-      assistant CLI séparé — le vrai point de friction est de dessiner la
-      grille à l'aveugle dans un éditeur de texte, pas de taper 3 lignes de
-      métadonnées. Réutilise le rendu existant (`CourseView`) pour peindre
-      le terrain en direct ; peut partir d'une grille vierge ou d'un trou
-      existant chargé tel quel.
-      **Plan (par phases)** :
-      1. Nouveau mode/état dans `main.rs` (ex. `BuilderState`), accessible
-         depuis le menu (`[E]` pour éditer/créer) ou via un flag CLI simple
-         (`divotty edit [fichier]`) — pas de nouveau binaire, cohérent avec
-         le choix "un seul crate" pour crates.io.
-      2. En-tête simple (pas un vrai wizard) pour `name`/`par` — la
-         difficulté reste au niveau `course.yaml`, donc hors du scope d'un
-         éditeur de trou unique.
-      3. Curseur déplaçable sur la grille (flèches), touche pour cycler le
-         type de terrain courant, Espace/Entrée pour peindre la case sous
-         le curseur — réutilise `TerrainKind`/`terrain_style` de
-         `render.rs`.
-      4. Sauvegarde : réutiliser la validation de `Hole::parse` (un seul
-         `D`, un seul `H`, dimensions cohérentes) avant d'écrire le
-         fichier `.course` — pas de logique de validation dupliquée.
-      5. Recouvre une bonne partie du besoin de l'item "Validateur de
-         carte" ci-dessous (la sauvegarde de l'éditeur *est* déjà une
-         validation) — à réévaluer si un outil de lint séparé reste utile
-         une fois le builder construit.
-      6. Estimation des longueurs de coup pendant l'édition, pour placer
-         bunkers/rough/eau/zones à pénalité à bon escient et doser la
-         difficulté du trou (les distances de club viennent d'être
-         recalibrées, voir plus haut — un Driver moyen ≈28 cases, etc.).
-         Réutiliser directement `core::preview_shot`/`ShotPreview` (le même
-         mécanisme qui affiche le guide/halo en jeu) depuis la position du
-         curseur du builder, plutôt que redévelopper un calcul de distance
-         séparé côté édition.
+- [ ] Builder de trous : éditeur clavier intégré au TUI, dessin case par
+      case avec rendu affiché en direct au fur et à mesure, retour en
+      arrière (undo) sur les dernières cases peintes, et possibilité de
+      partir d'une grille vierge ou d'un fichier `.course` existant chargé
+      pour modification sur place ou duplication sous un nouveau nom.
+      Retenu après avoir écarté deux pistes basées sur un support externe
+      (voir "Alternatives écartées" ci-dessous) — reste dans l'esprit "un
+      seul crate, simplicité" : pas d'outil ni de dépendance externe, le
+      fichier produit est valide par construction (la sauvegarde *est* un
+      `Hole::parse` réussi, pas d'étape de relecture/transcription séparée
+      après coup).
+
+      **Progression** : phases 1-8 faites et testées (accessible depuis le
+      menu, touche `E`) — un trou complet, dessiné entièrement au clavier,
+      se sauvegarde et se joue de bout en bout (vérifié en tmux : parcours
+      créé, joué, chargé après relance du binaire). Reste : charger/
+      dupliquer un fichier existant (phase 9), estimation de distance
+      pendant l'édition et ajout à `course.yaml` (phase 10, hors scope v1).
+
+      **Alternatives envisagées et écartées** :
+      - Scan/photo du canevas PDF (`tools/hole_design_canvas.pdf`) dessiné
+        au stylo (une couleur par terrain), converti en `.course` par
+        échantillonnage de couleur case par case : dessin à la main plus
+        "physique"/rapide sur le papier, mais ajoute une dépendance de
+        traitement d'image hors du crate Rust, et un risque de bruit de
+        transcription (éclairage, angle de photo, feutre qui déborde) qui
+        demande presque toujours une passe de correction manuelle après
+        coup — moins "efficace" en bout de chaîne que ça n'y paraît.
+      - Script de conversion "macro-grille" (grille réduite, ex. 20x12
+        blocs de 5x5 cases, remplie à la main dans un éditeur texte/tableur
+        avec la même légende, puis étendue automatiquement en 100x60) :
+        zéro dépendance, entièrement déterministe, mais reste un aller-
+        retour hors du jeu, sans retour visuel immédiat ni validation avant
+        la conversion finale.
+      - Les deux gardent un intérêt en soi comme piste de v2 si le besoin
+        de dessiner "à la main, vite, sur papier ou en gros blocs" se fait
+        sentir malgré tout — non retenues pour un premier builder, qui
+        reste le point d'entrée le plus rentable (rendu live + validation
+        immédiate + duplication d'un trou existant).
+
+      **Plan d'implémentation (par phases)** :
+      1. [x] **Sérialisation core** (`src/core/course.rs`) : nouvelle
+         fonction pure `Hole::to_course_string(&self) -> String`, inverse de
+         `Hole::parse` (frontmatter YAML + grille ASCII). Honore
+         `meta.width`/`meta.height` si déclarés (ne réécrit que la
+         sous-grille au même offset de centrage que `Hole::parse`), sinon
+         réécrit la grille 100x60 complète. Nouvelle méthode
+         `TerrainKind::to_char` (inverse de `from_char`) pour ça.
+         Testable sans terminal : un roundtrip
+         `Hole::parse(&hole.to_course_string())` redonne les mêmes
+         `tiles`/`tee`/`hole_pos` que l'original — vérifié sur le trou de
+         démo (grille pleine) et sur un petit trou déclaré (`width`/
+         `height`). Réutilisée à la sauvegarde du builder pour valider
+         avant écriture disque (garantit "ce qui est sauvegardé est
+         exactement ce que le jeu chargera").
+      2. [x] **En-tête** (`src/main.rs`, `setup_builder`, `tui::
+         BuilderSetupView` — nouveau mode accessible depuis le menu, touche
+         `E`) : `par` obligatoire (seul champ requis pour démarrer, ↑↓
+         pour l'ajuster de `MIN_HOLE_PAR` (3 — le golf n'a pas vraiment de
+         par en dessous, repéré après un signalement où `Down` pouvait
+         descendre jusqu'à 1) à 9), `name` par défaut ("New hole"/"Nouveau
+         trou" selon la langue) éditable ensuite dans l'éditeur (`N`).
+         Une **orientation** (←→ pour basculer horizontal/vertical) est
+         choisie à ce moment — détermine à la fois le sens d'avancée
+         automatique de la frappe (étape 3) et la taille de grille
+         suggérée (`suggested_declared_size`, testée), déclarée via
+         `HoleMeta::width`/`height` (le format à taille variable qu'on
+         vient de livrer) plutôt qu'un 100x60 plein par défaut. Le "grand
+         côté" (sens de l'orientation choisie) vient d'une table par par
+         cohérente avec les distances déjà calibrées dans
+         `tools/make_hole_canvas.py` (25 pour par ≤3, 55/70/85 pour par
+         4/5/6, 100 pour par 7+) ; le "petit côté" en est dérivé
+         *proportionnellement* (rapport 3/5, celui du canevas complet
+         100x60) plutôt que d'être une constante fixe indépendante du par
+         — un bug initial faisait que le petit côté restait toujours 30
+         quel que soit le par, repéré et corrigé après un signalement.
+         Le grand côté est clampé à ce que l'orientation choisie peut
+         effectivement contenir *avant* d'en dériver le petit côté (le
+         canevas n'est pas carré : le grand côté plafonne à 100 en
+         horizontal mais seulement 60 en vertical) — sinon un par 7+ en
+         vertical donnerait à tort un carré 60x60 au lieu d'un couloir
+         36x60 correctement proportionné. Un par 7+ en horizontal atteint
+         ainsi exactement le canevas 100x60 plein. `description` reste
+         hors scope v1 (toujours `None`).
+      3. [x] **Frappe directe = peinture, avec avancée automatique**
+         (`BuilderState::type_terrain`/`advance_cursor`, testées) : taper
+         un caractère de terrain valide (`.`/`=`/`B`/`~`/`T`/`G`/`X`/`D`/
+         `H`, reconnus par `TerrainKind::from_char`, déjà existant) peint
+         la case sous le curseur et avance automatiquement à la suivante
+         dans le sens choisi à l'étape 2 (ligne par ligne en horizontal,
+         colonne par colonne en vertical — comme du texte avec retour à la
+         ligne). Une touche qui ne correspond à aucun terrain est ignorée
+         (pas d'avancée). Pas de mode "sélectionner un terrain puis
+         peindre" : le caractère tapé *est* le terrain. Le curseur s'arrête
+         net à la dernière case (pas de retour au début) plutôt que de
+         boucler — testé. La répétition clavier native du terminal
+         (maintenir une touche enfoncée) sert de "remplissage rapide"
+         gratuit pour les longues lignes de fairway/rough — vérifié en
+         tmux.
+      4. [x] **Flèches** (`BuilderState::move_cursor`, testée, clampée aux
+         bords de la grille) : déplacement libre du curseur, indépendant
+         de l'avancée automatique.
+      5. [x] **Écrasement, y compris `D`/`H`** : chaque frappe remplace
+         inconditionnellement la case, sans bloquer un deuxième `D`/`H`
+         pendant l'édition — la règle "un seul de chaque" n'est vérifiée
+         qu'à la sauvegarde (étape 8), comme le reste.
+      6. [x] **Rendu** : nouveau widget `tui/builder.rs` (`BuilderView`),
+         calqué sur la boucle cellule-par-cellule de `CourseView`
+         (`render.rs`) — `terrain_style()` est passée de privée à
+         `pub(crate)` pour être partagée. Le curseur est surligné (fond
+         jaune clair) plutôt qu'un `●`/`⚑` (pas de balle/trou "réels" tant
+         que le fichier n'est pas validé). Réutilise `Viewport::top_left`
+         en centrant sur le curseur plutôt que sur la balle. Un bandeau
+         `BuilderHeaderView` au-dessus affiche nom/par/orientation, l'aide
+         clavier ou la saisie en cours (nom/chemin), et un message d'erreur
+         de sauvegarde le cas échéant.
+      7. [x] **Undo** (`BuilderState::undo`, testée) : pile
+         `Vec<(Pos, TerrainKind)>`, empilée avant chaque frappe valide, `U`
+         pour dépiler et restaurer la case précédente (et reculer le
+         curseur dessus).
+      8. [x] **Sauvegarde/arrêt/sortie** : `S` sérialise
+         (`BuilderState::to_course_raw`, testée) puis valide via un
+         `Hole::parse` interne (`save_builder`) ; en cas d'erreur (pas de
+         `D`/`H`, doublon...), affiche le message d'erreur dans le bandeau
+         au lieu d'écrire le fichier (chemin de destination demandé en
+         saisie libre, ex. `courses/mon_trou.course`). `qq` quitte
+         *l'application entière* (cohérent avec le reste de l'appli),
+         avec confirmation double affichant "quitter sans sauvegarder".
+         `Échap` revient au menu immédiatement sans cette confirmation —
+         différence assumée pour l'instant (raccourci "annuler et sortir"
+         rapide), mais sans le même garde-fou que `qq` ; à revoir si des
+         pertes accidentelles de dessin en cours s'avèrent gênantes en
+         pratique.
+      9. **Charger un fichier existant** : petit sélecteur parcourant
+         `courses/**/*.course` (même esprit que `Course::discover`, mais
+         fichier par fichier), au choix "Modifier" (réécrit le même
+         chemin) ou "Dupliquer" (nouveau nom demandé). Recharge grille +
+         meta dans le `BuilderState` (l'orientation de l'étape 2 devient
+         alors sans effet, la grille existante impose déjà sa forme).
+      10. *(Plus tard, hors scope v1)* Estimation des longueurs de coup
+          pendant l'édition, en réutilisant `core::preview_shot` depuis la
+          position du curseur — utile pour doser bunkers/rough/eau, mais
+          non bloquant pour un premier builder fonctionnel. Idem pour
+          l'ajout/retrait d'un trou dans `course.yaml` (le builder v1
+          édite un seul fichier `.course`, pas la liste des trous d'un
+          parcours).
+      11. Recouvre une bonne partie du besoin de l'item "Validateur de
+          carte" ci-dessous (la sauvegarde du builder *est* déjà une
+          validation) — à réévaluer si un outil de lint séparé reste utile
+          une fois le builder construit.
 - [ ] Partage de parcours créés avec le builder — pas encore tranché
       comment, mais un fichier `.course`/`course.yaml` est déjà du texte
       brut : le partage "à la main" (copier le fichier dans le dossier
