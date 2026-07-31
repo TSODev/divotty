@@ -5,7 +5,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction as LayoutDirection, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Widget},
 };
 
@@ -50,6 +50,10 @@ pub struct SidebarState<'a> {
 /// distincte de la couleur réactive éventuelle de son contenu (score,
 /// dernier coup, vent).
 const TITLE_ACCENT: Color = Color::White;
+/// Fond des 7 panneaux de la sidebar — vert sombre plutôt que le noir par
+/// défaut du terminal, petit clin d'œil golf (gazon). À ajuster si le
+/// rendu ne convient pas.
+const SIDEBAR_BG: Color = Color::Rgb(10, 65, 35);
 const HOLE_ACCENT: Color = Color::LightGreen;
 const SCORE_ACCENT: Color = Color::Yellow;
 const CLUB_ACCENT: Color = Color::LightBlue;
@@ -236,6 +240,15 @@ fn shot_message(shot: &ShotResult, strokes: u8, lang: Lang) -> String {
     }
 }
 
+/// Insère une amorce colorée (dans la couleur d'accent du panneau) entre la
+/// bordure gauche et le texte de la ligne, plutôt que le texte collé
+/// directement contre le cadre.
+fn prefix_line(line: Line<'static>, accent: Color) -> Line<'static> {
+    let mut spans = vec![Span::styled("▏ ", Style::default().fg(accent))];
+    spans.extend(line.spans);
+    Line::from(spans)
+}
+
 /// Panneau à bordures arrondies avec une couleur d'accent (bordure + titre)
 /// propre à chaque panneau, et un contenu ligne par ligne dont chaque ligne
 /// porte son propre style — pour que seule l'information pertinente (score,
@@ -245,7 +258,8 @@ fn panel(area: Rect, buf: &mut Buffer, title: &str, accent: Color, lines: Vec<Li
         .border_type(BorderType::Rounded)
         .borders(Borders::ALL)
         .title(title.to_string())
-        .style(Style::default().fg(accent));
+        .style(Style::default().fg(accent).bg(SIDEBAR_BG));
+    let lines = lines.into_iter().map(|l| prefix_line(l, accent)).collect::<Vec<_>>();
     Paragraph::new(lines).block(block).render(area, buf);
 }
 
@@ -258,10 +272,11 @@ fn panel_bottom_aligned(area: Rect, buf: &mut Buffer, title: &str, accent: Color
         .border_type(BorderType::Rounded)
         .borders(Borders::ALL)
         .title(title.to_string())
-        .style(Style::default().fg(accent));
+        .style(Style::default().fg(accent).bg(SIDEBAR_BG));
     let inner_height = block.inner(area).height as usize;
     let mut padded = vec![Line::from(""); inner_height.saturating_sub(lines.len())];
     padded.extend(lines);
+    let padded = padded.into_iter().map(|l| prefix_line(l, accent)).collect::<Vec<_>>();
     Paragraph::new(padded).block(block).render(area, buf);
 }
 
@@ -286,10 +301,13 @@ impl<'a> Widget for SidebarState<'a> {
             ])
             .split(area);
 
+        // Panneau Titre : pas de libellé de bordure (juste l'icône + version
+        // à l'intérieur), pour se démarquer comme une bannière plutôt qu'un
+        // volet d'info comme les autres — d'où le titre vide.
         panel(
             chunks[0],
             buf,
-            "Divotty",
+            "",
             TITLE_ACCENT,
             vec![Line::styled(
                 format!("⛳ Divotty v{}", env!("CARGO_PKG_VERSION")),

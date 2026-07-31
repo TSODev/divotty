@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   segment so the trajectory reads as one continuous line.
 - The end-of-round scorecard screen now has some breathing room instead of
   text touching the border directly.
+- The 7 sidebar panels now have a subtle dark green background instead of
+  the terminal's plain black, and a small colored tick (`▏`) between the
+  left border and each line's text instead of it touching the frame
+  directly. The title panel also dropped its own "Divotty" border label,
+  since the icon and version are already shown inside.
 
 ### Fixed
 - The ball marker disappeared after every shot when zoom was off — a
