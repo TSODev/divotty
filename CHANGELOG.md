@@ -24,7 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trajectory guide dots, the dispersion halo, the landing marker) got the
   same treatment: each now shows as a single character in its cell's
   zoomed block instead of filling all of it, so a guide dot reads as a
-  dot again instead of a solid square.
+  dot again instead of a solid square. Guide dots specifically go one step
+  further: each is a small 3-dot segment oriented with the shot (horizontal,
+  vertical, or diagonal), lining up edge-to-edge with the next cell's
+  segment so the trajectory reads as one continuous line.
 
 ### Fixed
 - The ball marker disappeared after every shot when zoom was off — a

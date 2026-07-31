@@ -137,12 +137,20 @@
       bloc (au lieu de le remplir en entier) — un point de guide devenait
       un bloc plein `···` au lieu d'un pointillé, pareil pour le halo et le
       repère. Le reste du bloc montre systématiquement le terrain réel.
-      Reste une piste distincte, non retenue pour l'instant : le guide
-      (`sample_line`, résolution en cases entières) trace toujours un point
-      par case entière, donc 0-1 point sur un putt de 1-2 cases — pour une
-      trajectoire vraiment *continue* même sur 1 case, il faudrait
-      l'échantillonner à la résolution du zoom (sous-case), pas juste
-      centrer le point existant.
+      Chaque point de guide s'affiche maintenant comme un petit segment de
+      3 points (horizontal, vertical ou diagonal selon le secteur de
+      boussole de la direction visée, `guide_segment_offsets()` dans
+      `render.rs`) plutôt qu'un point isolé au centre — les segments de
+      cases voisines se rejoignent pile (le point de bord d'une case
+      touche le point de bord de la suivante), donnant une ligne continue
+      pour une trajectoire horizontale/verticale/diagonale à 45°, sans
+      avoir à échantillonner `sample_line` à la résolution du zoom.
+      Seul le point de guide en profite (pas le halo, ni le repère
+      d'atterrissage, qui restent des points isolés — pas des segments de
+      ligne). Le guide (`sample_line`, résolution en cases entières) trace
+      toujours au plus un point par case entière, donc 0-1 case marquée sur
+      un putt de 1-2 cases — mais cette case unique se lit désormais comme
+      un vrai tronçon de trajectoire plutôt qu'un point isolé.
 - [x] Force du coup réglable par le joueur (`+`/`-`, 3 à 6, 6 = pleine
       puissance) : le tirage reste uniforme mais borné par le plafond
       choisi (`gen_range(1..=die_strength)`), pour éviter qu'un gros dé

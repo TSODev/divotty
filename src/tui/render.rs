@@ -114,6 +114,23 @@ fn compass_cell_offset(direction: Direction, zoom: usize) -> (u16, u16) {
     )
 }
 
+/// Trois décalages (dx, dy) formant un petit segment dans le bloc zoomé,
+/// orienté selon la direction du coup (horizontal, vertical ou diagonal
+/// selon le secteur de boussole de `direction`) — remplace le simple point
+/// centré pour un point de guide de trajectoire, afin qu'il se lise comme
+/// un tronçon de ligne qui *traverse* la case plutôt qu'un point isolé.
+/// Le point du milieu coïncide toujours avec le centre du bloc.
+fn guide_segment_offsets(direction: Direction, zoom: usize) -> [(u16, u16); 3] {
+    let center = (zoom / 2) as u16;
+    let last = zoom as u16 - 1;
+    match compass_sector(direction) {
+        0 | 4 => [(0, center), (center, center), (last, center)], // ← / → : horizontal
+        2 | 6 => [(center, 0), (center, center), (center, last)], // ↑ / ↓ : vertical
+        1 | 5 => [(0, 0), (center, center), (last, last)],        // ↖ / ↘ : diagonale "\"
+        _ => [(last, 0), (center, center), (0, last)],            // ↗ / ↙ : diagonale "/"
+    }
+}
+
 /// Caractère de cadre (box-drawing) pour la sous-case (dx, dy) d'un bloc
 /// zoomé de taille `zoom`, entourant le trou d'un cadre plutôt que de la
 /// couleur du terrain environnant — fait ressortir la cible quel que soit
@@ -249,14 +266,22 @@ impl<'a> Widget for CourseView<'a> {
                 // blocs pleins ne laissaient plus rien voir entre eux ; même
                 // chose pour un guide pointillé qui devenait un bloc plein
                 // plutôt qu'un pointillé. Exceptions : la balle garde une
-                // flèche de visée dans le secteur visé, et le trou un cadre
-                // à la place du remplissage de terrain.
+                // flèche de visée dans le secteur visé, le trou un cadre à
+                // la place du remplissage de terrain, et un point de guide
+                // (pas le halo ni le repère d'atterrissage, qui restent des
+                // points isolés) un petit segment de 3 points orienté selon
+                // la direction du coup plutôt qu'un point unique — se lit
+                // comme un tronçon de trajectoire qui traverse la case.
                 let center = ((zoom / 2) as u16, (zoom / 2) as u16);
                 let arrow = is_ball
                     .then(|| self.preview.map(|p| p.direction))
                     .flatten()
                     .map(|direction| (compass_cell_offset(direction, zoom), compass_arrow(direction)));
                 let is_hole = terrain == TerrainKind::Hole;
+                let guide_segment = (!is_ball && !is_hole && ch == '·')
+                    .then(|| self.preview.map(|p| p.direction))
+                    .flatten()
+                    .map(|direction| guide_segment_offsets(direction, zoom));
 
                 for dy in 0..zoom as u16 {
                     for dx in 0..zoom as u16 {
@@ -276,6 +301,14 @@ impl<'a> Widget for CourseView<'a> {
                                 buf.get_mut(x, y)
                                     .set_char(glyph.chars().next().unwrap())
                                     .set_style(Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD));
+                                continue;
+                            }
+                        }
+                        if let Some(offsets) = guide_segment {
+                            if offsets.contains(&(dx, dy)) {
+                                buf.get_mut(x, y)
+                                    .set_char(ch)
+                                    .set_style(Style::default().fg(color).add_modifier(modifier));
                                 continue;
                             }
                         }
