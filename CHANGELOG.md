@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Multi-hole courses now actually chain holes: once a hole is holed out,
+  pressing `N` moves on to the next one (ball, aim, wind, strokes and club
+  reset, same as replaying a hole) instead of being stuck on hole 1 of the
+  course. `N` only appears once there's another hole to play. The running
+  scorecard is now saved and resumed with the rest of the game state.
+- A running total ("Total: N (±M)") appears in the Score panel once a
+  course has more than one hole, alongside the current hole's own score.
+- Finishing the last hole and pressing `Enter` ("finish round") now shows
+  a full scorecard screen — every hole played, with its par, strokes and
+  Birdie/Bogey-style label, plus the overall total — before returning to
+  the course menu. This applies to every course, including single-hole
+  ones (the demo course included), not just multi-hole rounds.
 - Version number shown in the sidebar's title panel.
 - Sidebar panels now have rounded borders, a distinct accent color each,
   and colored/bold text that reacts to what's happening: the score panel

@@ -8,9 +8,10 @@ use crossterm::{
     execute,
 };
 use crate::core::{
-    preview_shot, resolve_shot, Club, Course, Direction, Hole, Pos, Shot, ShotResult, Wind,
+    preview_shot, resolve_shot, Club, Course, Direction, Hole, HoleScore, Pos, Scorecard, Shot,
+    ShotResult, Wind,
 };
-use crate::tui::{CourseMenuState, CourseView, Lang, SidebarState, Viewport};
+use crate::tui::{CourseMenuState, CourseView, Lang, ScorecardView, SidebarState, Viewport};
 use rand::Rng;
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction as LayoutDirection, Layout}, Terminal};
 use serde::{Deserialize, Serialize};
@@ -100,6 +101,8 @@ struct SaveData {
     wind: Wind,
     club: Club,
     aim: Direction,
+    #[serde(default)]
+    scorecard: Scorecard,
 }
 
 fn save_game(state: &GameState) -> Result<()> {
@@ -115,6 +118,7 @@ fn save_game(state: &GameState) -> Result<()> {
         wind: state.wind,
         club: state.club,
         aim: state.aim,
+        scorecard: state.scorecard.clone(),
     };
     std::fs::write(SAVE_PATH, serde_yaml::to_string(&data)?)?;
     Ok(())
@@ -125,16 +129,15 @@ fn load_game(lang: Lang) -> Result<GameState> {
     let data: SaveData = serde_yaml::from_str(&raw)?;
     let course = Course::load_from_dir(&data.course_dir)?;
     let hole_count = course.holes.len();
-    let hole = course
-        .holes
-        .into_iter()
-        .nth(data.hole_index)
-        .ok_or_else(|| anyhow::anyhow!("numéro de trou invalide dans la sauvegarde"))?;
+    if data.hole_index >= hole_count {
+        return Err(anyhow::anyhow!("numéro de trou invalide dans la sauvegarde"));
+    }
 
     Ok(GameState {
-        hole,
+        holes: course.holes,
         hole_index: data.hole_index,
         hole_count,
+        course_name: course.name,
         course_difficulty: course.difficulty,
         course_dir: Some(data.course_dir),
         ball: data.ball,
@@ -142,6 +145,7 @@ fn load_game(lang: Lang) -> Result<GameState> {
         strokes: data.strokes,
         club: data.club,
         aim: data.aim,
+        scorecard: data.scorecard,
         lang,
         last_die: None,
         last_shot: None,
@@ -152,9 +156,10 @@ fn load_game(lang: Lang) -> Result<GameState> {
 }
 
 struct GameState {
-    hole: Hole,
+    holes: Vec<Hole>,
     hole_index: usize,
     hole_count: usize,
+    course_name: String,
     course_difficulty: u8,
     /// Dossier d'origine du parcours, `None` pour le parcours de secours
     /// généré en mémoire (pas de fichier à sauvegarder).
@@ -167,6 +172,10 @@ struct GameState {
     strokes: u8,
     club: Club,
     aim: Direction,
+    /// Scores des trous déjà quittés (ni le trou en cours, ni un trou
+    /// terminé mais pas encore confirmé via `advance_hole` — rejouer un
+    /// trou fini avec `restart_hole` ne laisse donc aucune trace ici).
+    scorecard: Scorecard,
     lang: Lang,
     last_die: Option<u8>,
     last_shot: Option<ShotResult>,
@@ -180,17 +189,15 @@ struct GameState {
 impl GameState {
     fn new(course_dir: Option<PathBuf>, course: Course, lang: Lang) -> Self {
         let hole_count = course.holes.len();
-        let hole = course
-            .holes
-            .into_iter()
-            .next()
-            .expect("un parcours doit avoir au moins un trou");
-        let ball = hole.tee;
-        let aim = Direction::towards(hole.tee, hole.hole_pos);
+        assert!(hole_count > 0, "un parcours doit avoir au moins un trou");
+        let holes = course.holes;
+        let ball = holes[0].tee;
+        let aim = Direction::towards(holes[0].tee, holes[0].hole_pos);
         GameState {
-            hole,
+            holes,
             hole_index: 0,
             hole_count,
+            course_name: course.name,
             course_difficulty: course.difficulty,
             course_dir,
             ball,
@@ -198,6 +205,7 @@ impl GameState {
             strokes: 0,
             club: Club::Driver,
             aim,
+            scorecard: Scorecard::default(),
             lang,
             last_die: None,
             last_shot: None,
@@ -205,6 +213,10 @@ impl GameState {
             quit_confirm: false,
             zoom: false,
         }
+    }
+
+    fn current_hole(&self) -> &Hole {
+        &self.holes[self.hole_index]
     }
 
     fn play_shot(&mut self) {
@@ -215,10 +227,10 @@ impl GameState {
             die_roll: die,
         };
         let mut rng = rand::thread_rng();
-        let result = resolve_shot(&self.hole, self.ball, shot, self.wind, &mut rng);
+        let result = resolve_shot(self.current_hole(), self.ball, shot, self.wind, &mut rng);
         self.strokes += 1 + result.penalty_strokes;
         self.ball = result.landing;
-        self.aim = Direction::towards(self.ball, self.hole.hole_pos);
+        self.aim = Direction::towards(self.ball, self.current_hole().hole_pos);
         self.last_die = Some(die);
         self.last_shot = Some(result);
         self.just_saved = false;
@@ -254,15 +266,51 @@ impl GameState {
     /// Remet le trou courant à zéro pour le rejouer (touche `R` une fois
     /// `finished()`) : position de balle, coups et club repartent comme au
     /// début, le vent est retiré au sort pour varier d'un essai à l'autre.
+    /// Le scorecard n'est pas touché : tant que ce trou n'a pas été quitté
+    /// via `advance_hole`, il n'y a jamais été ajouté.
     fn restart_hole(&mut self) {
-        self.ball = self.hole.tee;
-        self.aim = Direction::towards(self.hole.tee, self.hole.hole_pos);
+        let (tee, hole_pos) = {
+            let hole = self.current_hole();
+            (hole.tee, hole.hole_pos)
+        };
+        self.ball = tee;
+        self.aim = Direction::towards(tee, hole_pos);
         self.wind = random_wind();
         self.strokes = 0;
         self.club = Club::Driver;
         self.last_die = None;
         self.last_shot = None;
         self.just_saved = false;
+    }
+
+    /// Enregistre le score du trou courant dans le scorecard puis passe au
+    /// trou suivant (balle/visée/vent/coups/club réinitialisés comme un
+    /// nouveau trou). Renvoie `false` sans rien charger de plus si le trou
+    /// courant était le dernier du parcours — c'est à l'appelant de gérer
+    /// la fin de partie (écran de scorecard complet, v0.2 phase 3).
+    fn advance_hole(&mut self) -> bool {
+        self.scorecard.push(HoleScore {
+            strokes: self.strokes,
+            par: self.current_hole().meta.par,
+        });
+
+        if self.hole_index + 1 >= self.hole_count {
+            return false;
+        }
+        self.hole_index += 1;
+        let (tee, hole_pos) = {
+            let hole = self.current_hole();
+            (hole.tee, hole.hole_pos)
+        };
+        self.ball = tee;
+        self.aim = Direction::towards(tee, hole_pos);
+        self.wind = random_wind();
+        self.strokes = 0;
+        self.club = Club::Driver;
+        self.last_die = None;
+        self.last_shot = None;
+        self.just_saved = false;
+        true
     }
 }
 
@@ -286,6 +334,12 @@ fn main() -> Result<()> {
                     match run_loop(&mut terminal, &mut state)? {
                         LoopExit::Quit => return Ok(()),
                         LoopExit::BackToMenu => continue,
+                        LoopExit::RoundComplete { course_name, course_difficulty, entries } => {
+                            match show_scorecard(&mut terminal, &course_name, course_difficulty, &entries, &mut lang)? {
+                                ScorecardExit::Quit => return Ok(()),
+                                ScorecardExit::BackToMenu => continue,
+                            }
+                        }
                     }
                 }
                 MenuChoice::Play(index) => {
@@ -297,6 +351,12 @@ fn main() -> Result<()> {
                     match run_loop(&mut terminal, &mut state)? {
                         LoopExit::Quit => return Ok(()),
                         LoopExit::BackToMenu => continue,
+                        LoopExit::RoundComplete { course_name, course_difficulty, entries } => {
+                            match show_scorecard(&mut terminal, &course_name, course_difficulty, &entries, &mut lang)? {
+                                ScorecardExit::Quit => return Ok(()),
+                                ScorecardExit::BackToMenu => continue,
+                            }
+                        }
                     }
                 }
             }
@@ -316,9 +376,24 @@ enum MenuChoice {
     Quit,
 }
 
-/// Comment on quitte la boucle de jeu : arrêt complet du programme, ou
-/// retour à l'écran de sélection de parcours (fin de trou, touche `M`).
+/// Comment on quitte la boucle de jeu : arrêt complet du programme, retour
+/// à l'écran de sélection de parcours (fin de trou, touche `M`), ou fin de
+/// parcours confirmée sur le dernier trou (`Enter`) — dans ce dernier cas,
+/// le détail des trous joués est renvoyé pour l'écran de scorecard.
 enum LoopExit {
+    Quit,
+    BackToMenu,
+    RoundComplete {
+        course_name: String,
+        course_difficulty: u8,
+        entries: Vec<(String, HoleScore)>,
+    },
+}
+
+/// Sortie de l'écran de fin de partie (scorecard complet) : uniquement
+/// quitter ou revenir au menu, jamais "trou suivant" (ce n'est plus une
+/// partie en cours à ce stade).
+enum ScorecardExit {
     Quit,
     BackToMenu,
 }
@@ -388,10 +463,11 @@ fn run_loop<B: ratatui::backend::Backend>(
             frame.render_widget(
                 SidebarState {
                     lang: state.lang,
-                    hole_meta: &state.hole.meta,
+                    hole_meta: &state.current_hole().meta,
                     course_difficulty: state.course_difficulty,
                     hole_index: state.hole_index,
                     hole_count: state.hole_count,
+                    scorecard: &state.scorecard,
                     strokes: state.strokes,
                     club: state.club,
                     aim: state.aim,
@@ -405,10 +481,10 @@ fn run_loop<B: ratatui::backend::Backend>(
                 columns[0],
             );
 
-            let preview = preview_shot(&state.hole, state.ball, state.club, state.aim, state.wind);
+            let preview = preview_shot(state.current_hole(), state.ball, state.club, state.aim, state.wind);
             frame.render_widget(
                 CourseView {
-                    hole: &state.hole,
+                    hole: state.current_hole(),
                     ball: state.ball,
                     viewport: Viewport {
                         // -2 : la carte est maintenant encadrée (bordure).
@@ -425,8 +501,10 @@ fn run_loop<B: ratatui::backend::Backend>(
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
                 if finished {
-                    // Trou terminé : plus de visée/coup/sauvegarde, juste
-                    // rejouer, revenir au menu, ou quitter (double q).
+                    // Trou terminé : plus de visée/coup/sauvegarde. En plus
+                    // de rejouer/menu/quitter : `N` passe au trou suivant
+                    // s'il en reste un ; `Enter` sur le dernier trou termine
+                    // la partie et bascule vers l'écran de scorecard complet.
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Char('Q') => {
                             if state.quit_confirm {
@@ -434,6 +512,25 @@ fn run_loop<B: ratatui::backend::Backend>(
                             }
                             state.quit_confirm = true;
                             continue;
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('N')
+                            if state.hole_index + 1 < state.hole_count =>
+                        {
+                            state.advance_hole();
+                        }
+                        KeyCode::Enter if state.hole_index + 1 >= state.hole_count => {
+                            state.advance_hole(); // enregistre le score du dernier trou
+                            let entries = state
+                                .holes
+                                .iter()
+                                .zip(state.scorecard.holes.iter())
+                                .map(|(hole, score)| (hole.meta.name.clone(), score.clone()))
+                                .collect();
+                            return Ok(LoopExit::RoundComplete {
+                                course_name: state.course_name.clone(),
+                                course_difficulty: state.course_difficulty,
+                                entries,
+                            });
                         }
                         KeyCode::Char('r') | KeyCode::Char('R') => state.restart_hole(),
                         KeyCode::Char('m') | KeyCode::Char('M') => return Ok(LoopExit::BackToMenu),
@@ -469,6 +566,52 @@ fn run_loop<B: ratatui::backend::Backend>(
     }
 }
 
+/// Écran de fin de partie : détail trou par trou + total, affiché une fois
+/// après `LoopExit::RoundComplete`, avant de revenir au menu.
+fn show_scorecard<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    course_name: &str,
+    course_difficulty: u8,
+    entries: &[(String, HoleScore)],
+    lang: &mut Lang,
+) -> Result<ScorecardExit> {
+    let mut quit_confirm = false;
+    loop {
+        terminal.draw(|frame| {
+            frame.render_widget(
+                ScorecardView {
+                    lang: *lang,
+                    course_name,
+                    entries,
+                    course_difficulty,
+                    quit_confirm,
+                },
+                frame.size(),
+            );
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        if quit_confirm {
+                            return Ok(ScorecardExit::Quit);
+                        }
+                        quit_confirm = true;
+                        continue;
+                    }
+                    KeyCode::Enter | KeyCode::Char('m') | KeyCode::Char('M') => {
+                        return Ok(ScorecardExit::BackToMenu)
+                    }
+                    KeyCode::Char('l') | KeyCode::Char('L') => *lang = lang.next(),
+                    _ => {}
+                }
+                quit_confirm = false;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -477,6 +620,39 @@ mod tests {
     /// généré en mémoire (pas besoin de fichier `.course` sur disque).
     fn test_state() -> GameState {
         GameState::new(None, fallback_course().unwrap(), Lang::default())
+    }
+
+    /// Parcours de test à 2 trous (pars différents), pour tester
+    /// l'enchaînement (`advance_hole`) sans dépendre d'un fichier sur disque.
+    fn two_hole_course() -> Course {
+        fn hole_raw(par: u8) -> String {
+            let width = crate::core::COURSE_WIDTH;
+            let height = crate::core::COURSE_HEIGHT;
+            let mut lines = Vec::with_capacity(height);
+            for y in 0..height {
+                let mut row = vec!['.'; width];
+                if y == 0 {
+                    row[0] = 'D';
+                }
+                if y == height - 1 {
+                    row[width - 1] = 'H';
+                }
+                lines.push(row.into_iter().collect::<String>());
+            }
+            format!("name: \"Test\"\npar: {}\n---\n{}\n", par, lines.join("\n"))
+        }
+        Course {
+            name: "Parcours de test".to_string(),
+            difficulty: 1,
+            holes: vec![
+                Hole::parse(&hole_raw(3)).unwrap(),
+                Hole::parse(&hole_raw(5)).unwrap(),
+            ],
+        }
+    }
+
+    fn two_hole_test_state() -> GameState {
+        GameState::new(None, two_hole_course(), Lang::default())
     }
 
     #[test]
@@ -551,7 +727,7 @@ mod tests {
         let mut state = test_state();
         state.play_shot();
         state.cycle_club();
-        let tee = state.hole.tee;
+        let tee = state.current_hole().tee;
 
         state.restart_hole();
 
@@ -562,5 +738,53 @@ mod tests {
         assert!(state.last_shot.is_none());
         assert!(!state.just_saved);
         assert!(!state.finished());
+    }
+
+    #[test]
+    fn restart_hole_does_not_touch_the_scorecard() {
+        let mut state = test_state();
+        state.play_shot();
+
+        state.restart_hole();
+
+        assert!(
+            state.scorecard.holes.is_empty(),
+            "rejouer un trou non quitté ne doit rien enregistrer au scorecard"
+        );
+    }
+
+    #[test]
+    fn advance_hole_records_score_and_loads_the_next_hole() {
+        let mut state = two_hole_test_state();
+        assert_eq!(state.hole_index, 0);
+        assert_eq!(state.current_hole().meta.par, 3);
+
+        state.strokes = 4;
+        let advanced = state.advance_hole();
+
+        assert!(advanced, "il reste un deuxième trou");
+        assert_eq!(state.hole_index, 1);
+        assert_eq!(state.current_hole().meta.par, 5);
+        assert_eq!(state.strokes, 0, "les coups repartent à zéro sur le nouveau trou");
+        assert_eq!(state.ball, state.current_hole().tee);
+        assert_eq!(state.club, Club::Driver);
+        assert_eq!(state.scorecard.holes.len(), 1);
+        assert_eq!(state.scorecard.holes[0].strokes, 4);
+        assert_eq!(state.scorecard.holes[0].par, 3);
+    }
+
+    #[test]
+    fn advance_hole_on_the_last_hole_records_score_but_reports_no_more_holes() {
+        let mut state = two_hole_test_state();
+        state.advance_hole(); // passe au trou 2 (le dernier)
+        state.strokes = 6;
+
+        let advanced = state.advance_hole();
+
+        assert!(!advanced, "c'était le dernier trou du parcours");
+        assert_eq!(state.hole_index, 1, "l'index ne doit pas dépasser le dernier trou");
+        assert_eq!(state.scorecard.holes.len(), 2);
+        assert_eq!(state.scorecard.holes[1].strokes, 6);
+        assert_eq!(state.scorecard.holes[1].par, 5);
     }
 }

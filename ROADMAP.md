@@ -29,10 +29,25 @@
       pour la tester en conditions réelles.
 
 ## v0.2 — Parcours complets
-- [ ] Enchaînement automatique des trous d'un `Course` (1 → 9 → 18) —
-      `GameState` suit déjà `hole_index`/`hole_count`, prêt pour cette
-      extension, mais ne joue toujours que `holes[0]`
-- [ ] Carte de score complète (`Scorecard`) affichée entre les trous et en fin de partie
+- [x] Enchaînement automatique des trous d'un `Course` (1 → 9 → 18) —
+      `GameState` garde désormais tous les trous (`holes: Vec<Hole>` +
+      `current_hole()`) au lieu de ne jouer que `holes[0]`. Touche `N`
+      (trou suivant) disponible dans le panneau Contrôles une fois le trou
+      terminé, uniquement s'il en reste un (`GameState::advance_hole`,
+      testé unitairement). `save.yaml` persiste désormais le `Scorecard`
+      accumulé (reprendre une partie multi-trous ne perd plus les trous
+      déjà joués).
+- [x] Carte de score complète (`Scorecard`) affichée entre les trous et en fin de partie —
+      le panneau Score affiche désormais un total cumulé ("Total: N (±M)")
+      dès qu'un parcours a plus d'un trou, en plus du score du trou en
+      cours (`SidebarState::scorecard`, `src/tui/sidebar.rs`). Sur le
+      dernier trou, `Entrée` ("finir la partie") enregistre le score final
+      et bascule vers un nouvel écran plein cadre (`tui::ScorecardView`,
+      `src/tui/scorecard.rs`) : détail trou par trou (nom, par, coups,
+      label) + total, avant retour au menu. Ce nouvel écran s'affiche pour
+      *tout* parcours, y compris à un seul trou (le trou de démo inclus) —
+      changement de comportement volontaire pour rester cohérent plutôt que
+      de réserver le résumé aux parcours multi-trous.
 - [x] Écran de fin de trou (résumé du score, label Birdie/Bogey/etc.) — pas
       un écran séparé : dès `holed`, les panneaux existants (Score, Dernier
       coup) montrent déjà le résumé, et le panneau Contrôles bascule sur

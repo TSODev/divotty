@@ -1,5 +1,5 @@
-use crate::core::{Club, Direction, HoleMeta, HoleScore, ScoreLabel, ShotResult, TerrainKind, Wind};
-use crate::tui::format::stars;
+use crate::core::{Club, Direction, HoleMeta, HoleScore, Scorecard, ShotResult, TerrainKind, Wind};
+use crate::tui::format::{format_relative, score_color, score_label_text, stars};
 use crate::tui::lang::Lang;
 use ratatui::{
     buffer::Buffer,
@@ -20,6 +20,9 @@ pub struct SidebarState<'a> {
     pub course_difficulty: u8,
     pub hole_index: usize,
     pub hole_count: usize,
+    /// Scores des trous déjà quittés (pas le trou en cours) — sert à
+    /// afficher un total cumulé une fois qu'il y a plus d'un trou.
+    pub scorecard: &'a Scorecard,
     pub strokes: u8,
     pub club: Club,
     pub aim: Direction,
@@ -55,19 +58,6 @@ fn bold(color: Color) -> Style {
     Style::new().fg(color).add_modifier(Modifier::BOLD)
 }
 
-/// Couleur d'un label de score : doré pour un très bon score, vert pour un
-/// birdie, neutre au par, orange/rouge à mesure qu'on s'en éloigne — lisible
-/// d'un coup d'œil sans avoir à lire le texte.
-fn score_color(label: ScoreLabel) -> Color {
-    match label {
-        ScoreLabel::Albatross | ScoreLabel::Eagle => Color::Rgb(255, 200, 0),
-        ScoreLabel::Birdie => Color::LightGreen,
-        ScoreLabel::Par => Color::White,
-        ScoreLabel::Bogey => Color::Rgb(255, 140, 0),
-        ScoreLabel::DoubleBogey | ScoreLabel::TripleBogeyOrWorse => Color::Red,
-    }
-}
-
 /// Couleur du vent selon sa force : vert calme, jaune modéré, rouge fort.
 fn wind_color(strength: f32) -> Color {
     if strength < 1.0 {
@@ -88,11 +78,13 @@ struct Labels {
     panel_aim: &'static str,
     panel_controls: &'static str,
     strokes: &'static str,
+    total: &'static str,
     die: &'static str,
     wind: &'static str,
     club_hint: &'static str,
     controls_body: &'static str,
     finished_controls_body: &'static str,
+    finished_controls_body_more_holes: &'static str,
     ready_message: &'static str,
     saved_message: &'static str,
     quit_confirm_hint: &'static str,
@@ -108,11 +100,13 @@ fn labels(lang: Lang) -> Labels {
             panel_aim: "Aim",
             panel_controls: "Controls",
             strokes: "Strokes",
+            total: "Total",
             die: "Die",
             wind: "Wind",
             club_hint: "[Tab] next",
             controls_body: "← →  aim\nTab  club\nSpace  play\nZ  zoom\nS  save\nL  language\nqq  quit",
-            finished_controls_body: "R  replay\nM  menu\nZ  zoom\nL  language\nqq  quit",
+            finished_controls_body: "Enter  finish round\nR  replay\nM  menu\nZ  zoom\nL  language\nqq  quit",
+            finished_controls_body_more_holes: "N  next hole\nR  replay\nM  menu\nZ  zoom\nL  language\nqq  quit",
             ready_message: "Ready to play.",
             saved_message: "Game saved.",
             quit_confirm_hint: "Press q again to quit",
@@ -125,11 +119,13 @@ fn labels(lang: Lang) -> Labels {
             panel_aim: "Visée",
             panel_controls: "Contrôles",
             strokes: "Coups",
+            total: "Total",
             die: "Dé",
             wind: "Vent",
             club_hint: "[Tab] suivant",
             controls_body: "← →  viser\nTab  club\nEspace  jouer\nZ  zoom\nS  sauvegarder\nL  langue\nqq  quitter",
-            finished_controls_body: "R  rejouer\nM  menu\nZ  zoom\nL  langue\nqq  quitter",
+            finished_controls_body: "Entrée  terminer\nR  rejouer\nM  menu\nZ  zoom\nL  langue\nqq  quitter",
+            finished_controls_body_more_holes: "N  trou suivant\nR  rejouer\nM  menu\nZ  zoom\nL  langue\nqq  quitter",
             ready_message: "Prêt à jouer.",
             saved_message: "Partie sauvegardée.",
             quit_confirm_hint: "Appuyez encore sur q pour quitter",
@@ -151,21 +147,6 @@ fn club_label(club: Club, lang: Lang) -> &'static str {
         (Club::Wedge, Lang::Fr) => "Wedge",
         (Club::Putter, Lang::En) => "Putter",
         (Club::Putter, Lang::Fr) => "Putter",
-    }
-}
-
-fn score_label_text(label: ScoreLabel, lang: Lang) -> &'static str {
-    match (label, lang) {
-        (ScoreLabel::Albatross, Lang::En) => "Albatross",
-        (ScoreLabel::Albatross, Lang::Fr) => "Albatros",
-        (ScoreLabel::Eagle, _) => "Eagle",
-        (ScoreLabel::Birdie, _) => "Birdie",
-        (ScoreLabel::Par, _) => "Par",
-        (ScoreLabel::Bogey, _) => "Bogey",
-        (ScoreLabel::DoubleBogey, Lang::En) => "Double bogey",
-        (ScoreLabel::DoubleBogey, Lang::Fr) => "Double bogey",
-        (ScoreLabel::TripleBogeyOrWorse, Lang::En) => "Triple bogey or worse",
-        (ScoreLabel::TripleBogeyOrWorse, Lang::Fr) => "Triple bogey ou plus",
     }
 }
 
@@ -213,14 +194,6 @@ fn shot_message(shot: &ShotResult, strokes: u8, lang: Lang) -> String {
             Lang::En => format!("Ball on {}", terrain_name(shot.landing_terrain, lang)),
             Lang::Fr => format!("Balle sur {}", terrain_name(shot.landing_terrain, lang)),
         }
-    }
-}
-
-fn format_relative(relative: i16) -> String {
-    match relative {
-        0 => "E".to_string(),
-        r if r > 0 => format!("+{r}"),
-        r => format!("{r}"),
     }
 }
 
@@ -273,13 +246,17 @@ fn panel_bottom_aligned(area: Rect, buf: &mut Buffer, title: &str, accent: Color
 impl<'a> Widget for SidebarState<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let l = labels(self.lang);
+        // Une ligne "Total" en plus dans le panneau Score dès qu'il y a
+        // plus d'un trou (sinon le total serait toujours égal au trou
+        // courant, sans intérêt).
+        let score_panel_height = if self.hole_count > 1 { 5 } else { 4 };
 
         let chunks = Layout::default()
             .direction(LayoutDirection::Vertical)
             .constraints([
                 Constraint::Length(3), // Titre
                 Constraint::Length(5), // Infos du trou
-                Constraint::Length(4), // Score
+                Constraint::Length(score_panel_height), // Score
                 Constraint::Length(4), // Club
                 Constraint::Length(4), // Dernier coup
                 Constraint::Length(4), // Visée (aim + vent)
@@ -329,18 +306,24 @@ impl<'a> Widget for SidebarState<'a> {
                 format!(
                     "{} ({})",
                     score_label_text(label, self.lang),
-                    format_relative(hole_score.relative_to_par())
+                    format_relative(hole_score.relative_to_par() as i32)
                 ),
                 bold(score_color(label)),
             )
         };
-        panel(
-            chunks[2],
-            buf,
-            l.panel_score,
-            SCORE_ACCENT,
-            vec![Line::styled(format!("{}: {}", l.strokes, self.strokes), NEUTRAL), score_line],
-        );
+        let mut score_lines = vec![Line::styled(format!("{}: {}", l.strokes, self.strokes), NEUTRAL), score_line];
+        if self.hole_count > 1 {
+            score_lines.push(Line::styled(
+                format!(
+                    "{}: {} ({})",
+                    l.total,
+                    self.scorecard.total_strokes(),
+                    format_relative(self.scorecard.relative_to_par())
+                ),
+                DIM,
+            ));
+        }
+        panel(chunks[2], buf, l.panel_score, SCORE_ACCENT, score_lines);
 
         panel(
             chunks[3],
@@ -398,7 +381,11 @@ impl<'a> Widget for SidebarState<'a> {
         );
 
         let base_controls: &str = if self.finished {
-            l.finished_controls_body
+            if self.hole_index + 1 < self.hole_count {
+                l.finished_controls_body_more_holes
+            } else {
+                l.finished_controls_body
+            }
         } else {
             l.controls_body
         };
