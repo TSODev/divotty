@@ -195,6 +195,11 @@ fn load_game(lang: Lang) -> Result<GameState> {
         aim: data.aim,
         scorecard: data.scorecard,
         die_strength: data.die_strength,
+        // Pas persisté (voir `Scorecard` et `die_strength` pour ce qui l'est
+        // déjà) : une reprise de sauvegarde repart avec un historique
+        // limité à la position actuelle, pas tout le trajet depuis le
+        // départ du trou.
+        shot_history: vec![data.ball],
         lang,
         last_die: None,
         last_shot: None,
@@ -231,6 +236,11 @@ struct GameState {
     /// club/trou courant, pas une préférence durable (voir
     /// `cycle_club`/`restart_hole`/`advance_hole`).
     die_strength: u8,
+    /// Points d'arrêt de la balle sur le trou en cours (le départ inclus,
+    /// puis l'atterrissage de chaque coup) — sert à retracer le parcours
+    /// sur la carte une fois le trou terminé (`CourseView::path`). Remis à
+    /// `[tee]` à chaque nouveau trou ou reprise du trou courant.
+    shot_history: Vec<Pos>,
     lang: Lang,
     last_die: Option<u8>,
     last_shot: Option<ShotResult>,
@@ -262,6 +272,7 @@ impl GameState {
             aim,
             scorecard: Scorecard::default(),
             die_strength: 6,
+            shot_history: vec![ball],
             lang,
             last_die: None,
             last_shot: None,
@@ -286,6 +297,7 @@ impl GameState {
         let result = resolve_shot(self.current_hole(), self.ball, shot, self.wind, &mut rng);
         self.strokes += 1 + result.penalty_strokes;
         self.ball = result.landing;
+        self.shot_history.push(self.ball);
         self.aim = Direction::towards(self.ball, self.current_hole().hole_pos);
         self.last_die = Some(die);
         self.last_shot = Some(result);
@@ -354,6 +366,7 @@ impl GameState {
             (hole.tee, hole.hole_pos)
         };
         self.ball = tee;
+        self.shot_history = vec![tee];
         self.aim = Direction::towards(tee, hole_pos);
         self.wind = random_wind();
         self.strokes = 0;
@@ -384,6 +397,7 @@ impl GameState {
             (hole.tee, hole.hole_pos)
         };
         self.ball = tee;
+        self.shot_history = vec![tee];
         self.aim = Direction::towards(tee, hole_pos);
         self.wind = random_wind();
         self.strokes = 0;
@@ -564,13 +578,21 @@ fn run_loop<B: ratatui::backend::Backend>(
                 columns[0],
             );
 
-            let preview = preview_shot(
-                state.current_hole(),
-                state.ball,
-                state.club,
-                state.aim,
-                state.die_strength,
-            );
+            // Une fois le trou fini, plus rien à viser : l'aperçu de coup
+            // cède la place au rappel du parcours joué (voir
+            // `GameState::shot_history` / `CourseView::path`).
+            let preview = if finished {
+                None
+            } else {
+                Some(preview_shot(
+                    state.current_hole(),
+                    state.ball,
+                    state.club,
+                    state.aim,
+                    state.die_strength,
+                ))
+            };
+            let path = finished.then(|| state.shot_history.as_slice());
             frame.render_widget(
                 CourseView {
                     hole: state.current_hole(),
@@ -580,7 +602,8 @@ fn run_loop<B: ratatui::backend::Backend>(
                         width: columns[1].width.saturating_sub(2) as usize,
                         height: columns[1].height.saturating_sub(2) as usize,
                     },
-                    preview: Some(preview),
+                    preview,
+                    path,
                     zoomed: state.zoom,
                 },
                 columns[1],
@@ -817,6 +840,39 @@ mod tests {
         assert!(state.strokes >= 1, "au moins un coup doit être compté");
         assert!(state.last_die.is_some());
         assert!(state.last_shot.is_some());
+    }
+
+    #[test]
+    fn shot_history_starts_at_the_tee_and_grows_with_each_shot() {
+        let mut state = test_state();
+        let tee = state.current_hole().tee;
+        assert_eq!(state.shot_history, vec![tee]);
+
+        state.play_shot();
+        assert_eq!(state.shot_history.len(), 2);
+        assert_eq!(*state.shot_history.last().unwrap(), state.ball);
+
+        state.play_shot();
+        assert_eq!(state.shot_history.len(), 3);
+        assert_eq!(*state.shot_history.last().unwrap(), state.ball);
+    }
+
+    #[test]
+    fn shot_history_resets_on_restart_and_advance() {
+        let mut state = two_hole_test_state();
+        let tee = state.current_hole().tee;
+        state.play_shot();
+        assert!(state.shot_history.len() > 1);
+
+        state.restart_hole();
+        assert_eq!(state.shot_history, vec![tee]);
+
+        state.play_shot();
+        assert!(state.shot_history.len() > 1);
+
+        state.advance_hole();
+        let next_tee = state.current_hole().tee;
+        assert_eq!(state.shot_history, vec![next_tee]);
     }
 
     #[test]

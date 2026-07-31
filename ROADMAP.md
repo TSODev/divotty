@@ -195,7 +195,16 @@
       changement de format `.course` plus lourd). Probablement à combiner
       avec le zoom (v0.3, ci-dessus) pour que le joueur puisse "lire" la
       pente avant de putter.
-- [ ] Historique des coups joués sur le trou courant, affiché dans le HUD
+- [x] Historique des coups joués sur le trou courant — pas un texte dans un
+      panneau comme envisagé initialement, mais un rappel visuel sur la
+      carte une fois le trou terminé : `GameState::shot_history` (`Vec<Pos>`,
+      départ inclus, complété après chaque `play_shot`, remis à `[tee]` sur
+      `restart_hole`/`advance_hole`, non persisté dans `save.yaml`) donne à
+      `CourseView::path` la liste des points d'arrêt. Remplace l'aperçu de
+      visée (qui n'a plus lieu d'être une fois fini) par une balle rouge à
+      chaque arrêt intermédiaire et un pointillé de balles jaunes reliant
+      les points consécutifs — plus visible qu'un simple texte ou qu'un
+      pointillé discret, cohérent avec le style golf de la carte.
 - [x] Amélioration du drop : reprise au dernier point valide le long de la
       trajectoire plutôt qu'un retour pur à la position de départ
       (`backtrack_to_safe_landing()` dans `shot.rs`) — remonte depuis le

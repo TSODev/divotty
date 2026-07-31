@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Once you hole out, the map replaces the (now pointless) aim preview with
+  a recap of the whole hole: a red ball at each intermediate stop and a
+  trail of yellow balls connecting them, from tee to cup.
+
 ### Changed
 - Putting is less of a coin flip now: the Putter's accuracy improves the
   closer the ball already is to the hole, instead of a fixed dispersion

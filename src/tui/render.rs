@@ -62,6 +62,12 @@ pub struct CourseView<'a> {
     /// surimpression tant que le joueur n'a pas joué. `None` si pas de coup
     /// en cours de visée (ex: entre deux trous).
     pub preview: Option<ShotPreview>,
+    /// Historique des points d'arrêt de la balle sur ce trou (départ inclus,
+    /// position finale incluse) — affiché à la place de `preview` une fois
+    /// le trou terminé, en rappel visuel du parcours : une balle rouge à
+    /// chaque arrêt intermédiaire, un pointillé de balles jaunes reliant
+    /// les points consécutifs. `None` tant que le trou n'est pas fini.
+    pub path: Option<&'a [Pos]>,
     /// Zoom activé par le joueur (touche dédiée) — pas automatique.
     pub zoomed: bool,
 }
@@ -196,6 +202,19 @@ impl<'a> Widget for CourseView<'a> {
             .map(|p| sample_line(self.ball, p.max_landing))
             .unwrap_or_default();
 
+        // Arrêts intermédiaires (ni le départ ni l'atterrissage final, déjà
+        // repérés par leurs propres glyphes) et cases interpolées entre
+        // arrêts consécutifs, pour le rappel de parcours affiché une fois
+        // le trou terminé (voir `CourseView::path`).
+        let (path_stops, path_dots): (Vec<Pos>, Vec<Pos>) = match self.path {
+            Some(positions) if positions.len() >= 2 => {
+                let stops = positions[1..positions.len() - 1].to_vec();
+                let dots = positions.windows(2).flat_map(|pair| sample_line(pair[0], pair[1])).collect();
+                (stops, dots)
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+
         for grow in 0..content_h_cells {
             for gcol in 0..content_w_cells {
                 let gx = ox + gcol;
@@ -232,6 +251,23 @@ impl<'a> Widget for CourseView<'a> {
                             ch = '✛';
                         }
                         color = Color::LightYellow;
+                        modifier = Modifier::BOLD;
+                    }
+                }
+
+                if self.path.is_some() {
+                    if path_dots.contains(&pos) {
+                        if !is_landmark {
+                            ch = '●';
+                        }
+                        color = Color::LightYellow;
+                        modifier = Modifier::BOLD;
+                    }
+                    if path_stops.contains(&pos) {
+                        if !is_landmark {
+                            ch = '●';
+                        }
+                        color = Color::Red;
                         modifier = Modifier::BOLD;
                     }
                 }
