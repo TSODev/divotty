@@ -33,10 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does, and any key other than a second `Esc` cancels it — including `S`,
   which switches to saving instead, so you can save your work before
   leaving rather than losing it.
-  A saved file is always one the game can already load, since saving
-  validates it the same way loading does. Not yet supported: loading an
-  existing `.course` file to edit or duplicate it
-  (coming in a follow-up).
+  Saving only ever asks for a plain file name (no path, no extension) —
+  every hole is saved to `courses/_library/`, a holding area for holes not
+  yet part of a course, with the name cleaned up automatically (special
+  characters become underscores). Saving under a name that's already taken
+  asks to confirm the overwrite (or lets you change the name) instead of
+  silently appending a counter, so re-saving under the same name actually
+  updates that file rather than piling up copies. A saved file is always
+  one the game can already load, since saving validates it the same way
+  loading does. Not yet supported: loading an existing `.course` file
+  to edit or duplicate it (coming in a follow-up).
 
 ### Changed
 - Putting is less of a coin flip now: the Putter's accuracy improves the

@@ -264,7 +264,20 @@ Fait et testé :
   (`BuilderState::to_course_raw`) et valide via `Hole::parse` avant
   d'écrire sur disque — un fichier produit par le builder est donc
   toujours un fichier que le jeu sait déjà charger, vérifié en tmux
-  (trou créé, sauvegardé, rechargé et joué de bout en bout). La frappe est
+  (trou créé, sauvegardé, rechargé et joué de bout en bout). Emplacement
+  de sauvegarde systématique dans `courses/_library/` (`HOLE_LIBRARY_DIR`,
+  créé si absent) — le joueur ne choisit jamais l'emplacement, seulement
+  un nom de fichier sans extension, nettoyé (`sanitize_hole_filename`,
+  testée : ne garde que lettres/chiffres/`-`/`_`, ce qui élimine tout
+  risque de séparateur de chemin ou de `..`). En cas de collision,
+  `BuilderMode::ConfirmOverwrite` demande confirmation avant d'écraser
+  (`Entrée`/`Y` écrase, `Échap`/`N` revient à la saisie du nom, conservée,
+  pour la modifier) plutôt qu'un compteur automatique — écarté après
+  signalement : ça aurait empêché de mettre à jour un trou déjà
+  sauvegardé (chaque sauvegarde aurait créé un nouveau fichier au lieu de
+  remplacer l'ancien). Un message de confirmation affiche le chemin final
+  et rappelle que le trou n'est pas encore inclus dans un parcours, sans
+  quitter automatiquement le builder. La frappe est
   insensible à la casse (`terrain_from_builder_key`, testée — `d` comme
   `D`, `t` comme `T`, etc. ; seul le format `.course` lui-même reste
   strict), et le bandeau d'en-tête affiche en permanence la légende des
@@ -288,8 +301,8 @@ Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 31 tests unitaires dans
-  `src/main.rs` (72 au total avec `core`), mais rien qui simule un vrai
+  `adjust_die_strength`...) a maintenant 34 tests unitaires dans
+  `src/main.rs` (75 au total avec `core`), mais rien qui simule un vrai
   terminal/`crossterm`.
 
 ## Publication crates.io

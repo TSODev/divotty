@@ -763,6 +763,31 @@ fn terrain_from_builder_key(c: char) -> Option<TerrainKind> {
     TerrainKind::from_char(c.to_ascii_uppercase())
 }
 
+/// Dossier où le builder sauvegarde systématiquement chaque trou — une
+/// bibliothèque de trous pas encore assignés à un parcours, en attendant le
+/// futur builder de parcours (voir `ROADMAP.md`). Le joueur ne choisit
+/// jamais l'emplacement lui-même, seulement un nom de fichier.
+const HOLE_LIBRARY_DIR: &str = "courses/_library";
+
+/// Nettoie un nom de fichier tapé à la main pour la bibliothèque de trous :
+/// ne garde que les caractères alphanumériques ASCII, `-` et `_` (remplace
+/// le reste, y compris espaces et séparateurs de chemin, par `_`) — élimine
+/// au passage tout risque de remontée `..` ou de chemin absolu, puisque `/`
+/// et `.` ne survivent jamais au nettoyage. Retombe sur "hole" si le
+/// résultat est vide (saisie entièrement blanche).
+fn sanitize_hole_filename(input: &str) -> String {
+    let cleaned: String = input
+        .trim()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    if cleaned.is_empty() {
+        "hole".to_string()
+    } else {
+        cleaned
+    }
+}
+
 /// Taille de grille suggérée à partir du par visé, cohérente avec les
 /// distances déjà utilisées par `tools/make_hole_canvas.py` (rayons idéaux
 /// tee-green par par) : un par court n'a pas besoin d'un canevas 100x60
@@ -817,6 +842,9 @@ struct BuilderState {
     undo_stack: Vec<(Pos, TerrainKind)>,
     mode: BuilderMode,
     text_input: String,
+    /// Chemin en attente de confirmation d'écrasement
+    /// (`BuilderMode::ConfirmOverwrite`) — `None` en dehors de ce mode.
+    pending_save_path: Option<PathBuf>,
     message: Option<String>,
     lang: Lang,
     quit_confirm: bool,
@@ -847,6 +875,7 @@ impl BuilderState {
             undo_stack: Vec::new(),
             mode: BuilderMode::Drawing,
             text_input: String::new(),
+            pending_save_path: None,
             message: None,
             lang,
             quit_confirm: false,
@@ -999,6 +1028,11 @@ fn run_builder<B: ratatui::backend::Backend>(
                     grid_height: state.height,
                     mode: state.mode,
                     text_input: &state.text_input,
+                    pending_save_name: state
+                        .pending_save_path
+                        .as_ref()
+                        .and_then(|p| p.file_stem())
+                        .and_then(|s| s.to_str()),
                     message: state.message.as_deref(),
                     quit_confirm: state.quit_confirm,
                     exit_confirm: state.exit_confirm,
@@ -1050,7 +1084,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                             }
                             KeyCode::Char('s') | KeyCode::Char('S') => {
                                 state.text_input.clear();
-                                state.mode = BuilderMode::EnteringSavePath;
+                                state.mode = BuilderMode::EnteringSaveName;
                             }
                             KeyCode::Char(c) => {
                                 if let Some(terrain) = terrain_from_builder_key(c) {
@@ -1077,19 +1111,26 @@ fn run_builder<B: ratatui::backend::Backend>(
                         KeyCode::Char(c) => state.text_input.push(c),
                         _ => {}
                     },
-                    BuilderMode::EnteringSavePath => match key.code {
+                    BuilderMode::EnteringSaveName => match key.code {
                         KeyCode::Enter => {
-                            let path = state.text_input.trim().to_string();
-                            if path.is_empty() {
+                            if state.text_input.trim().is_empty() {
                                 state.mode = BuilderMode::Drawing;
                                 continue;
                             }
-                            match save_builder(state, Path::new(&path)) {
-                                Ok(()) => return Ok(BuilderExit::BackToMenu),
-                                Err(err) => {
-                                    state.message = Some(err.to_string());
-                                    state.mode = BuilderMode::Drawing;
-                                }
+                            let base_name = sanitize_hole_filename(&state.text_input);
+                            let path =
+                                Path::new(HOLE_LIBRARY_DIR).join(format!("{base_name}.course"));
+                            if path.exists() {
+                                // Ne jamais ajouter un compteur automatique
+                                // ici : ça empêcherait de mettre à jour un
+                                // trou déjà sauvegardé (chaque sauvegarde
+                                // créerait un nouveau fichier au lieu de
+                                // remplacer l'ancien). On demande plutôt
+                                // confirmation avant d'écraser.
+                                state.pending_save_path = Some(path);
+                                state.mode = BuilderMode::ConfirmOverwrite;
+                            } else {
+                                finish_save(state, path);
                             }
                         }
                         KeyCode::Esc => state.mode = BuilderMode::Drawing,
@@ -1097,6 +1138,20 @@ fn run_builder<B: ratatui::backend::Backend>(
                             state.text_input.pop();
                         }
                         KeyCode::Char(c) => state.text_input.push(c),
+                        _ => {}
+                    },
+                    BuilderMode::ConfirmOverwrite => match key.code {
+                        KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            if let Some(path) = state.pending_save_path.take() {
+                                finish_save(state, path);
+                            } else {
+                                state.mode = BuilderMode::Drawing;
+                            }
+                        }
+                        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                            state.pending_save_path = None;
+                            state.mode = BuilderMode::EnteringSaveName;
+                        }
                         _ => {}
                     },
                 }
@@ -1108,11 +1163,38 @@ fn run_builder<B: ratatui::backend::Backend>(
 /// Sérialise `state` et valide le résultat via `Hole::parse` avant de
 /// l'écrire sur le disque — sauvegarder, c'est réussir ce parsing (voir
 /// `BuilderState::to_course_raw`). N'écrit rien si la validation échoue.
+/// Crée le dossier parent de `path` s'il n'existe pas encore (typiquement
+/// `courses/_library/` à la première sauvegarde).
 fn save_builder(state: &BuilderState, path: &Path) -> Result<()> {
     let raw = state.to_course_raw();
     Hole::parse(&raw)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(path, raw)?;
     Ok(())
+}
+
+/// Termine la sauvegarde vers `path` (déjà résolu, collision déjà tranchée
+/// par l'appelant) : sauvegarde effective, message de succès/erreur, et
+/// retour au mode dessin — partagé entre la sauvegarde directe (pas de
+/// collision) et la confirmation d'écrasement.
+fn finish_save(state: &mut BuilderState, path: PathBuf) {
+    match save_builder(state, &path) {
+        Ok(()) => {
+            state.message = Some(match state.lang {
+                Lang::En => format!("Saved as {} — not yet part of any course.", path.display()),
+                Lang::Fr => format!(
+                    "Sauvegardé sous {} — pas encore inclus dans un parcours.",
+                    path.display()
+                ),
+            });
+        }
+        Err(err) => {
+            state.message = Some(err.to_string());
+        }
+    }
+    state.mode = BuilderMode::Drawing;
 }
 
 #[cfg(test)]
@@ -1467,6 +1549,25 @@ mod tests {
     fn terrain_from_builder_key_rejects_unrecognized_chars() {
         assert_eq!(terrain_from_builder_key('q'), None);
         assert_eq!(terrain_from_builder_key('1'), None);
+    }
+
+    #[test]
+    fn sanitize_hole_filename_keeps_only_safe_characters() {
+        assert_eq!(sanitize_hole_filename("My Hole #1!"), "My_Hole__1_");
+        assert_eq!(sanitize_hole_filename("valid-name_2"), "valid-name_2");
+    }
+
+    #[test]
+    fn sanitize_hole_filename_strips_path_separators_and_dots() {
+        // Ni `/` ni `.` ne survivent au nettoyage : aucune remontée `..`
+        // ni chemin absolu ne peut jamais sortir de `HOLE_LIBRARY_DIR`.
+        assert_eq!(sanitize_hole_filename("../../etc/passwd"), "______etc_passwd");
+    }
+
+    #[test]
+    fn sanitize_hole_filename_falls_back_to_hole_when_input_is_blank() {
+        assert_eq!(sanitize_hole_filename("   "), "hole");
+        assert_eq!(sanitize_hole_filename(""), "hole");
     }
 
     #[test]

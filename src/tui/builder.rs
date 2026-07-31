@@ -36,14 +36,26 @@ impl BuilderOrientation {
     }
 }
 
-/// Étape d'interaction courante dans l'écran d'édition : dessin normal, ou
-/// une des deux saisies de texte ponctuelles (nom, chemin de sauvegarde) qui
-/// bloquent temporairement la frappe de terrain le temps de la saisie.
+/// Étape d'interaction courante dans l'écran d'édition : dessin normal,
+/// l'une des deux saisies de texte ponctuelles (nom du trou, nom de fichier
+/// de sauvegarde) qui bloquent temporairement la frappe de terrain le temps
+/// de la saisie, ou une confirmation d'écrasement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuilderMode {
     Drawing,
     EditingName,
-    EnteringSavePath,
+    /// Saisie du nom de fichier (sans extension, sans chemin) pour la
+    /// sauvegarde — toujours écrit dans `courses/_library/`, voir
+    /// `HOLE_LIBRARY_DIR`/`sanitize_hole_filename` dans `main.rs`. Le
+    /// joueur ne choisit jamais l'emplacement lui-même.
+    EnteringSaveName,
+    /// Le nom de fichier saisi correspond à un fichier déjà présent dans
+    /// `courses/_library/` — demande confirmation avant d'écraser plutôt
+    /// que d'ajouter un compteur automatique (qui empêcherait de mettre à
+    /// jour un trou déjà sauvegardé : chaque sauvegarde créerait un
+    /// nouveau fichier au lieu de remplacer l'ancien). `Entrée`/`Y` pour
+    /// écraser, `Échap`/`N` pour revenir à la saisie du nom et le changer.
+    ConfirmOverwrite,
 }
 
 fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
@@ -213,6 +225,9 @@ pub struct BuilderHeaderView<'a> {
     pub grid_height: usize,
     pub mode: BuilderMode,
     pub text_input: &'a str,
+    /// Nom de fichier (sans extension) en attente de confirmation
+    /// d'écrasement, affiché dans `BuilderMode::ConfirmOverwrite`.
+    pub pending_save_name: Option<&'a str>,
     pub message: Option<&'a str>,
     pub quit_confirm: bool,
     /// Deuxième pression sur `Échap` en attente (retour au menu) — distinct
@@ -351,10 +366,27 @@ impl<'a> Widget for BuilderHeaderView<'a> {
                     Lang::En => format!("New name: {}_ (Enter to confirm, Esc to cancel)", self.text_input),
                     Lang::Fr => format!("Nouveau nom : {}_ (Entrée valider, Échap annuler)", self.text_input),
                 },
-                BuilderMode::EnteringSavePath => match self.lang {
-                    Lang::En => format!("Save to: {}_ (Enter to confirm, Esc to cancel)", self.text_input),
-                    Lang::Fr => format!("Sauvegarder sous : {}_ (Entrée valider, Échap annuler)", self.text_input),
+                BuilderMode::EnteringSaveName => match self.lang {
+                    Lang::En => format!(
+                        "File name (no extension): {}_ (Enter to confirm, Esc to cancel)",
+                        self.text_input
+                    ),
+                    Lang::Fr => format!(
+                        "Nom de fichier (sans extension) : {}_ (Entrée valider, Échap annuler)",
+                        self.text_input
+                    ),
                 },
+                BuilderMode::ConfirmOverwrite => {
+                    let name = self.pending_save_name.unwrap_or("");
+                    match self.lang {
+                        Lang::En => format!(
+                            "'{name}' already exists — overwrite? (Enter/Y: overwrite, Esc/N: rename)"
+                        ),
+                        Lang::Fr => format!(
+                            "« {name} » existe déjà — écraser ? (Entrée/Y : écraser, Échap/N : renommer)"
+                        ),
+                    }
+                }
             }
         };
         write_line(

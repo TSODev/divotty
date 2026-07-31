@@ -412,20 +412,45 @@
          (`BuilderState::to_course_raw`, testée) puis valide via un
          `Hole::parse` interne (`save_builder`) ; en cas d'erreur (pas de
          `D`/`H`, doublon...), affiche le message d'erreur dans le bandeau
-         au lieu d'écrire le fichier (chemin de destination demandé en
-         saisie libre, ex. `courses/mon_trou.course`). `qq` quitte
-         *l'application entière* (cohérent avec le reste de l'appli), avec
-         confirmation double affichant "quitter sans sauvegarder". `Échap`
-         revient au menu (pas l'application entière), avec sa propre
-         confirmation double (`BuilderState::exit_confirm`, distincte de
-         `quit_confirm`) — signalé après un premier passage sans garde-fou
-         du tout, corrigé depuis : un deuxième `Échap` confirme l'abandon,
-         mais n'importe quelle autre touche annule, y compris `S` qui
-         bascule normalement vers la sauvegarde (aucune logique dédiée
-         nécessaire : la frappe `S` habituelle prend le relai et la
-         confirmation se réinitialise au passage) — permet donc de
-         sauvegarder le travail en cours avant de sortir plutôt que de
-         perdre le dessin.
+         au lieu d'écrire le fichier. `qq` quitte *l'application entière*
+         (cohérent avec le reste de l'appli), avec confirmation double
+         affichant "quitter sans sauvegarder". `Échap` revient au menu (pas
+         l'application entière), avec sa propre confirmation double
+         (`BuilderState::exit_confirm`, distincte de `quit_confirm`) —
+         signalé après un premier passage sans garde-fou du tout, corrigé
+         depuis : un deuxième `Échap` confirme l'abandon, mais n'importe
+         quelle autre touche annule, y compris `S` qui bascule normalement
+         vers la sauvegarde (aucune logique dédiée nécessaire : la frappe
+         `S` habituelle prend le relai et la confirmation se réinitialise
+         au passage) — permet donc de sauvegarder le travail en cours
+         avant de sortir plutôt que de perdre le dessin.
+         **Emplacement de sauvegarde** : d'abord envisagé en saisie libre
+         (chemin complet demandé au joueur), puis simplifié après
+         discussion — un joueur qui ne connaît pas la structure interne du
+         projet ne saurait pas où mettre son fichier, ni même qu'il faut
+         l'ajouter à un `course.yaml` pour le jouer (le futur builder de
+         parcours n'existe pas encore). Retenu : sauvegarde systématique
+         dans `courses/_library/` (`HOLE_LIBRARY_DIR`, créé si absent),
+         zone de dépôt pour les trous pas encore assignés à un parcours —
+         cohérente avec le modèle "bibliothèque + duplication" déjà
+         tranché pour le futur builder de parcours. Le joueur ne saisit
+         qu'un nom (sans extension, `sanitize_hole_filename` — testée —
+         ne garde que lettres/chiffres/`-`/`_`, ce qui élimine au passage
+         tout risque de séparateur de chemin ou de remontée `..`).
+         En cas de collision, un compteur automatique a d'abord été
+         essayé, puis écarté après signalement : ça empêcherait de mettre
+         à jour un trou déjà sauvegardé (le builder ne charge pas encore
+         un fichier existant, phase 9 ci-dessous, donc la seule façon de
+         "mettre à jour" un trou dans la session courante est de le
+         resauvegarder sous le même nom) — chaque sauvegarde aurait créé
+         un nouveau fichier au lieu de remplacer l'ancien. Retenu à la
+         place : `BuilderMode::ConfirmOverwrite` demande confirmation
+         avant d'écraser (`Entrée`/`Y` écrase, `Échap`/`N` revient à la
+         saisie du nom en conservant ce qui était tapé, pour le modifier).
+         Un message de confirmation affiche le chemin final et rappelle
+         que le trou n'est pas encore inclus dans un parcours, sans faire
+         sortir automatiquement du builder (comme les messages d'erreur)
+         pour laisser le temps de le lire.
       9. **Charger un fichier existant** : petit sélecteur parcourant
          `courses/**/*.course` (même esprit que `Course::discover`, mais
          fichier par fichier), au choix "Modifier" (réécrit le même
