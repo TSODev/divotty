@@ -334,6 +334,24 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
     prochain coup) plutôt qu'un simple message flatteur sans effet — un
     seul type de boost simple pour commencer plutôt qu'un système à
     plusieurs boosts dès le départ.
+  - Le "négatif" symétrique pourrait être l'événement "tu casses ton
+    club" : le club utilisé au moment de l'événement devient indisponible
+    (`cycle_club`/`cycle_club_reverse` le sautent) pour le reste du
+    **parcours**, pas juste le trou — cohérent avec le côté "rare et
+    marquant" recherché. Points à trancher avant d'implémenter :
+    - Sévérité : perdre le Driver est gênant mais jouable autrement ;
+      perdre le Putter casserait probablement la capacité à finir
+      proprement un trou — possiblement à exclure du tirage, ou à limiter
+      la casse aux longs clubs (Driver/Bois/Hybride).
+    - Portée réelle du mot "parcours" du joueur : dure jusqu'à la fin de
+      la partie en cours (tous les trous restants), remis à neuf au
+      prochain parcours choisi au menu — pas persistant dans `save.yaml`
+      au-delà de cette partie a priori, à confirmer.
+    - Implémentation pressentie : un nouveau champ `GameState` (ex.
+      `broken_clubs: HashSet<Club>`), initialisé vide dans `GameState::new`
+      et **jamais** réinitialisé par `restart_hole`/`advance_hole`
+      (contrairement à `die_strength`) puisque l'effet doit justement
+      survivre au changement de trou.
 - Récompense (boost) pour un score sous le par sur un trou (birdie ou
   mieux) : contrairement au boost d'événement aléatoire ci-dessus, celui-ci
   récompenserait le skill plutôt que la chance — cohérent avec la
@@ -342,3 +360,18 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
   maintenant cet item : `GameState::advance_hole` est l'endroit naturel où
   appliquer un boost au trou suivant (ex. dispersion réduite sur le
   premier coup) si le trou qu'on vient de quitter était sous le par.
+- Types de boost envisagés (primitives réutilisables pour les deux idées
+  de récompense ci-dessus — événement aléatoire et bon score) :
+  - **Boost distance** : ajoute 1 ou 2 directement au tirage du dé, sans
+    plafond — peut donc dépasser 6 et faire mieux que la meilleure portée
+    normalement possible. Volontairement plus simple qu'un multiplicateur
+    de distance : une seule addition sur `die_roll` avant l'appel à
+    `Club::base_distance`.
+  - **Boost précision** : réduit la dispersion effective du prochain coup
+    (ex. divisée par deux, déjà évoqué plus haut pour l'idée événement
+    aléatoire).
+  - Point à trancher le moment venu : le boost distance doit-il ignorer le
+    plafond de dé choisi par le joueur (`GameState::die_strength`, voir
+    v0.3 "Force du coup") ou s'additionner puis être re-plafonné ? Les deux
+    mécanismes touchent le même tirage de dé et n'ont pas encore été pensés
+    ensemble.
