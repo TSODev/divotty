@@ -262,6 +262,25 @@ mod tests {
     }
 
     #[test]
+    fn loads_quick3_course_from_disk() {
+        // Vérifie que le parcours à 3 trous (courses/quick3/) parse
+        // correctement — sert de non-régression sur l'enchaînement
+        // multi-trous (voir ROADMAP v0.2, phase 4).
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("courses/quick3");
+        let course = Course::load_from_dir(&dir).expect("le parcours Quick 3 doit charger");
+        assert_eq!(course.holes.len(), 3);
+        assert_eq!(course.holes.iter().map(|h| h.meta.par as u32).sum::<u32>(), 12);
+        assert!((1..=4).contains(&course.difficulty));
+    }
+
+    #[test]
+    fn discovers_quick3_course_on_disk() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("courses");
+        let courses = Course::discover(&root).expect("la découverte doit réussir");
+        assert!(courses.iter().any(|(_, c)| c.name == "Quick 3"));
+    }
+
+    #[test]
     fn rejects_out_of_range_difficulty() {
         let dir = std::env::temp_dir().join(format!(
             "divotty_test_difficulty_{}",

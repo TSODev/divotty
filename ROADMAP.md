@@ -59,16 +59,20 @@
 - [x] Menu de sélection de parcours (lecture de `courses/*/course.yaml`)
 - [x] Difficulté par parcours (1 à 4 étoiles, champ `difficulty` dans
       `course.yaml`, purement indicative)
-- [ ] Panneau "Score" façon carte de golf : n° de trou, par du trou, score
-      courant, adapté au nombre de trous du parcours (1/3/9/18).
-      **Prérequis** : dépend directement des deux items ci-dessus
-      (enchaînement multi-trous + `Scorecard`) — impossible d'afficher un
-      score sur 9 trous tant que le jeu ne peut jouer qu'un trou. À
-      implémenter avec/après eux, pas avant.
-- [ ] Parcours rapide à 3 trous (`courses/quick3/`) : bon format pour
-      tester l'enchaînement multi-trous sans attendre un 9 trous complet ;
-      bon candidat aussi pour exercer le futur format de grille taille
-      variable (trous courts = grilles compactes, voir v0.4)
+- [x] Panneau "Score" façon carte de golf : n° de trou, par du trou, score
+      courant, adapté au nombre de trous du parcours (1/3/9/18) — fait en
+      même temps que l'écran de scorecard complet ci-dessus (même dépendance
+      sur l'enchaînement multi-trous + `Scorecard`) : total cumulé affiché
+      dès que `hole_count > 1`, cf. item "Carte de score complète".
+- [x] Parcours rapide à 3 trous (`courses/quick3/`, difficulté 2 étoiles,
+      par 3/4/5 pour 12 au total) : bon format pour tester l'enchaînement
+      multi-trous sans attendre un 9 trous complet. Trois orientations/
+      distances distinctes (par 3 vertical avec carry d'eau, par 4
+      horizontal avec cluster de bunkers + zone à pénalité, par 5 horizontal
+      avec double obstacle eau+bunker et un cluster d'arbres) — bon candidat
+      aussi pour exercer le futur format de grille taille variable (trous
+      courts = grilles compactes, voir v0.4), pas encore fait ici (toujours
+      100x60 plein comme le trou de démo).
 
 ## v0.3 — Visée et feedback
 - [x] Vent (direction + force), tiré aléatoirement au chargement du trou

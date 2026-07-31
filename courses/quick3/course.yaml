@@ -1,0 +1,6 @@
+name: "Quick 3"
+difficulty: 2
+holes:
+  - hole_01.course
+  - hole_02.course
+  - hole_03.course

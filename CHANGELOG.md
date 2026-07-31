@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Birdie/Bogey-style label, plus the overall total — before returning to
   the course menu. This applies to every course, including single-hole
   ones (the demo course included), not just multi-hole rounds.
+- New 3-hole course, `courses/quick3/` ("Quick 3", difficulty 2): a par 3,
+  4 and 5 (par 12 total) with distinct orientations and hazards, meant as
+  a fast way to exercise hole-to-hole chaining without playing a full
+  9-hole round.
 - Version number shown in the sidebar's title panel.
 - Sidebar panels now have rounded borders, a distinct accent color each,
   and colored/bold text that reacts to what's happening: the score panel
