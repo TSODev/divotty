@@ -95,6 +95,19 @@
       pas automatique sur le green) : chaque case s'affiche comme un bloc
       de plusieurs caractères au lieu d'un seul. Purement cosmétique — le
       modèle de position (`Pos`, cases entières) ne change pas.
+- [x] Plafond de dé réglable par le joueur (`+`/`-`, 3 à 6, 6 = pas de
+      plafond) : le tirage reste uniforme mais borné par le plafond choisi
+      (`gen_range(1..=die_strength)`), pour éviter qu'un gros dé n'envoie la
+      balle bien au-delà d'un green proche. Plancher à 3 plutôt qu'1
+      (`DIE_STRENGTH_FLOOR`) : en dessous, même un Putter (portée die*0.5)
+      ne parcourrait presque plus rien, rendant le coup inutile plutôt que
+      "sûr". Affiché dans le panneau Club (`Die cap: N/6`, coloré en jaune
+      si <6) ; l'aperçu de coup (`preview_shot`) prend désormais
+      `die_strength` en paramètre pour que le guide/halo reflète le plafond
+      courant plutôt qu'un 6 fixe. Remis à 6 à chaque nouveau trou et à
+      chaque changement de club (choix délibéré : réglage fin pour le
+      club/trou courant, pas une préférence durable) — voir
+      `GameState::adjust_die_strength` dans `main.rs`.
 - [ ] Rendre le putting moins aléatoire — à concevoir maintenant que le
       zoom rend la zone du green lisible. Actuellement `Club::Putter` a la
       dispersion la plus faible (0.2) mais reste un simple tirage aléatoire

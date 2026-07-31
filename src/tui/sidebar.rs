@@ -25,6 +25,9 @@ pub struct SidebarState<'a> {
     pub scorecard: &'a Scorecard,
     pub strokes: u8,
     pub club: Club,
+    /// Plafond choisi par le joueur pour le tirage du dé (1 à 6, 6 = pas de
+    /// plafond) — voir `GameState::die_strength` dans `main.rs`.
+    pub die_strength: u8,
     pub aim: Direction,
     pub wind: Wind,
     pub last_die: Option<u8>,
@@ -80,6 +83,7 @@ struct Labels {
     strokes: &'static str,
     total: &'static str,
     die: &'static str,
+    die_cap: &'static str,
     wind: &'static str,
     club_hint: &'static str,
     controls_body: &'static str,
@@ -102,8 +106,9 @@ fn labels(lang: Lang) -> Labels {
             strokes: "Strokes",
             total: "Total",
             die: "Die",
+            die_cap: "Die cap",
             wind: "Wind",
-            club_hint: "Tab next / Shift+Tab prev",
+            club_hint: "Tab club  +/- die cap",
             controls_body: "← →  aim\nTab  club\nSpace  play\nZ  zoom\nS  save\nL  language\nqq  quit",
             finished_controls_body: "Enter  finish round\nR  replay\nM  menu\nZ  zoom\nL  language\nqq  quit",
             finished_controls_body_more_holes: "N  next hole\nR  replay\nM  menu\nZ  zoom\nL  language\nqq  quit",
@@ -121,8 +126,9 @@ fn labels(lang: Lang) -> Labels {
             strokes: "Coups",
             total: "Total",
             die: "Dé",
+            die_cap: "Plafond dé",
             wind: "Vent",
-            club_hint: "Tab suiv / Shift+Tab préc",
+            club_hint: "Tab club  +/- plafond dé",
             controls_body: "← →  viser\nTab  club\nEspace  jouer\nZ  zoom\nS  sauvegarder\nL  langue\nqq  quitter",
             finished_controls_body: "Entrée  terminer\nR  rejouer\nM  menu\nZ  zoom\nL  langue\nqq  quitter",
             finished_controls_body_more_holes: "N  trou suivant\nR  rejouer\nM  menu\nZ  zoom\nL  langue\nqq  quitter",
@@ -257,7 +263,7 @@ impl<'a> Widget for SidebarState<'a> {
                 Constraint::Length(3), // Titre
                 Constraint::Length(5), // Infos du trou
                 Constraint::Length(score_panel_height), // Score
-                Constraint::Length(4), // Club
+                Constraint::Length(5), // Club
                 Constraint::Length(4), // Dernier coup
                 Constraint::Length(4), // Visée (aim + vent)
                 Constraint::Min(0),    // Contrôles
@@ -325,6 +331,11 @@ impl<'a> Widget for SidebarState<'a> {
         }
         panel(chunks[2], buf, l.panel_score, SCORE_ACCENT, score_lines);
 
+        let die_cap_style = if self.die_strength < 6 {
+            bold(Color::Yellow)
+        } else {
+            DIM
+        };
         panel(
             chunks[3],
             buf,
@@ -332,6 +343,7 @@ impl<'a> Widget for SidebarState<'a> {
             CLUB_ACCENT,
             vec![
                 Line::styled(club_label(self.club, self.lang), bold(Color::White)),
+                Line::styled(format!("{}: {}/6", l.die_cap, self.die_strength), die_cap_style),
                 Line::styled(l.club_hint, DIM),
             ],
         );

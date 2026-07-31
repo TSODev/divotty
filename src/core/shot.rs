@@ -213,12 +213,18 @@ pub struct ShotPreview {
 /// Calcule l'aperçu de portée/dispersion pour un club et une direction
 /// donnés, depuis la case `from`. Utilisé par l'UI pour afficher une zone
 /// de dispersion visée avant que le joueur ne joue réellement le coup.
+///
+/// `die_strength` (1 à 6) est le plafond que le joueur a choisi pour le dé
+/// (voir `GameState::die_strength` côté `app`) : le meilleur tirage possible
+/// n'est plus forcément 6, donc `max_landing` doit refléter ce plafond
+/// plutôt qu'une portée maximale toujours calculée sur un 6 fixe.
 pub fn preview_shot(
     hole: &Hole,
     from: Pos,
     club: Club,
     direction: Direction,
     wind: Wind,
+    die_strength: u8,
 ) -> ShotPreview {
     let start_terrain = hole.terrain_at(from).unwrap_or(TerrainKind::OutOfBounds);
     let profile = start_terrain.profile();
@@ -235,9 +241,11 @@ pub fn preview_shot(
         Pos { x, y }
     };
 
+    let expected_die = ((1 + die_strength) as f32 / 2.0).round() as u8;
+
     ShotPreview {
-        max_landing: landing_for_die(6),
-        expected_landing: landing_for_die(4),
+        max_landing: landing_for_die(die_strength),
+        expected_landing: landing_for_die(expected_die),
         dispersion_radius: effective_dispersion(
             club.base_dispersion(),
             profile.dispersion_mult,
@@ -467,7 +475,7 @@ mod tests {
     fn preview_grows_with_die_and_matches_dispersion() {
         let hole = flat_fairway_hole();
         let direction = Direction { dx: 1.0, dy: 0.0 };
-        let preview = preview_shot(&hole, hole.tee, Club::Driver, direction, Wind::default());
+        let preview = preview_shot(&hole, hole.tee, Club::Driver, direction, Wind::default(), 6);
 
         assert!(preview.max_landing.x > preview.expected_landing.x);
         assert!(preview.expected_landing.x > hole.tee.x);
@@ -478,6 +486,23 @@ mod tests {
                 TerrainKind::Fairway.profile().dispersion_mult,
                 Club::Driver.terrain_sensitivity(),
             )
+        );
+    }
+
+    #[test]
+    fn preview_shrinks_with_a_lower_die_strength() {
+        let hole = flat_fairway_hole();
+        let direction = Direction { dx: 1.0, dy: 0.0 };
+        let full = preview_shot(&hole, hole.tee, Club::Driver, direction, Wind::default(), 6);
+        let capped = preview_shot(&hole, hole.tee, Club::Driver, direction, Wind::default(), 3);
+
+        assert!(
+            capped.max_landing.x < full.max_landing.x,
+            "un plafond de dé plus bas doit réduire la portée maximale affichée"
+        );
+        assert_eq!(
+            capped.dispersion_radius, full.dispersion_radius,
+            "le plafond de dé ne doit pas affecter la dispersion, seulement la distance"
         );
     }
 

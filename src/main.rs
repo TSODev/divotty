@@ -21,6 +21,13 @@ use std::time::Duration;
 
 const SAVE_PATH: &str = "save.yaml";
 
+/// Plus bas plafond de dé sélectionnable par le joueur (`+`/`-`, voir
+/// `GameState::adjust_die_strength`). En dessous de 3, un Putter (portée
+/// die*0.5) ne pourrait plus parcourir que 0.5-1 case, rendant le coup
+/// souvent inutile plutôt que "sûr" — le plancher garde une marge de
+/// réduction utile sans ce piège.
+const DIE_STRENGTH_FLOOR: u8 = 3;
+
 /// Liste les parcours jouables sous `courses/`, avec leur dossier d'origine
 /// (nécessaire pour recharger/sauvegarder). Si `courses/` n'existe pas ou ne
 /// contient rien, renvoie un unique parcours de démonstration codé en dur —
@@ -90,6 +97,13 @@ fn random_wind() -> Wind {
     }
 }
 
+/// Plafond de dé par défaut (1 à 6) : 6 = pas de plafond, comportement
+/// d'origine. Fonction plutôt que constante inline pour servir de valeur
+/// `#[serde(default)]` (sauvegardes écrites avant l'ajout du champ).
+fn default_die_strength() -> u8 {
+    6
+}
+
 /// Ce qui est persisté d'une partie en cours : juste assez pour retrouver le
 /// parcours sur disque et reprendre exactement où le joueur s'est arrêté.
 #[derive(Serialize, Deserialize)]
@@ -103,6 +117,8 @@ struct SaveData {
     aim: Direction,
     #[serde(default)]
     scorecard: Scorecard,
+    #[serde(default = "default_die_strength")]
+    die_strength: u8,
 }
 
 fn save_game(state: &GameState) -> Result<()> {
@@ -119,6 +135,7 @@ fn save_game(state: &GameState) -> Result<()> {
         club: state.club,
         aim: state.aim,
         scorecard: state.scorecard.clone(),
+        die_strength: state.die_strength,
     };
     std::fs::write(SAVE_PATH, serde_yaml::to_string(&data)?)?;
     Ok(())
@@ -146,6 +163,7 @@ fn load_game(lang: Lang) -> Result<GameState> {
         club: data.club,
         aim: data.aim,
         scorecard: data.scorecard,
+        die_strength: data.die_strength,
         lang,
         last_die: None,
         last_shot: None,
@@ -176,6 +194,11 @@ struct GameState {
     /// terminé mais pas encore confirmé via `advance_hole` — rejouer un
     /// trou fini avec `restart_hole` ne laisse donc aucune trace ici).
     scorecard: Scorecard,
+    /// Plafond choisi par le joueur pour le tirage du dé (1 à 6, 6 = pas de
+    /// plafond). Remis à 6 à chaque nouveau trou et à chaque changement de
+    /// club — un réglage fin pour le club/trou courant, pas une préférence
+    /// durable (voir `cycle_club`/`restart_hole`/`advance_hole`).
+    die_strength: u8,
     lang: Lang,
     last_die: Option<u8>,
     last_shot: Option<ShotResult>,
@@ -206,6 +229,7 @@ impl GameState {
             club: Club::Driver,
             aim,
             scorecard: Scorecard::default(),
+            die_strength: 6,
             lang,
             last_die: None,
             last_shot: None,
@@ -220,7 +244,7 @@ impl GameState {
     }
 
     fn play_shot(&mut self) {
-        let die: u8 = rand::thread_rng().gen_range(1..=6);
+        let die: u8 = rand::thread_rng().gen_range(1..=self.die_strength);
         let shot = Shot {
             club: self.club,
             direction: self.aim,
@@ -254,6 +278,7 @@ impl GameState {
             Club::Wedge => Club::Putter,
             Club::Putter => Club::Driver,
         };
+        self.die_strength = 6;
     }
 
     /// Comme `cycle_club`, dans l'autre sens (`Shift+Tab`) — pratique pour
@@ -267,6 +292,16 @@ impl GameState {
             Club::Wedge => Club::Iron,
             Club::Putter => Club::Wedge,
         };
+        self.die_strength = 6;
+    }
+
+    /// Ajuste le plafond de dé (`+`/`-`), borné entre `DIE_STRENGTH_FLOOR`
+    /// et 6. Le plancher évite qu'un plafond trop bas (1 ou 2) ne rende un
+    /// putt inutile : à plafond 1, un Putter ne peut plus parcourir que 0.5
+    /// case, souvent pas assez pour atteindre le trou.
+    fn adjust_die_strength(&mut self, delta: i8) {
+        let current = self.die_strength as i8;
+        self.die_strength = (current + delta).clamp(DIE_STRENGTH_FLOOR as i8, 6) as u8;
     }
 
     /// Vrai si le dernier coup a atteint le trou — le joueur ne peut plus
@@ -291,6 +326,7 @@ impl GameState {
         self.wind = random_wind();
         self.strokes = 0;
         self.club = Club::Driver;
+        self.die_strength = 6;
         self.last_die = None;
         self.last_shot = None;
         self.just_saved = false;
@@ -320,6 +356,7 @@ impl GameState {
         self.wind = random_wind();
         self.strokes = 0;
         self.club = Club::Driver;
+        self.die_strength = 6;
         self.last_die = None;
         self.last_shot = None;
         self.just_saved = false;
@@ -483,6 +520,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                     scorecard: &state.scorecard,
                     strokes: state.strokes,
                     club: state.club,
+                    die_strength: state.die_strength,
                     aim: state.aim,
                     wind: state.wind,
                     last_die: state.last_die,
@@ -494,7 +532,14 @@ fn run_loop<B: ratatui::backend::Backend>(
                 columns[0],
             );
 
-            let preview = preview_shot(state.current_hole(), state.ball, state.club, state.aim, state.wind);
+            let preview = preview_shot(
+                state.current_hole(),
+                state.ball,
+                state.club,
+                state.aim,
+                state.wind,
+                state.die_strength,
+            );
             frame.render_widget(
                 CourseView {
                     hole: state.current_hole(),
@@ -564,6 +609,8 @@ fn run_loop<B: ratatui::backend::Backend>(
                         KeyCode::Char(' ') => state.play_shot(),
                         KeyCode::Tab => state.cycle_club(),
                         KeyCode::BackTab => state.cycle_club_reverse(),
+                        KeyCode::Char('-') => state.adjust_die_strength(-1),
+                        KeyCode::Char('+') => state.adjust_die_strength(1),
                         KeyCode::Char('s') | KeyCode::Char('S') => {
                             state.just_saved = save_game(state).is_ok();
                         }
@@ -829,5 +876,72 @@ mod tests {
         assert_eq!(state.scorecard.holes.len(), 2);
         assert_eq!(state.scorecard.holes[1].strokes, 6);
         assert_eq!(state.scorecard.holes[1].par, 5);
+    }
+
+    #[test]
+    fn adjust_die_strength_is_clamped_between_the_floor_and_6() {
+        let mut state = test_state();
+        assert_eq!(state.die_strength, 6, "pas de plafond par défaut");
+
+        for _ in 0..10 {
+            state.adjust_die_strength(-1);
+        }
+        assert_eq!(state.die_strength, DIE_STRENGTH_FLOOR, "ne doit jamais descendre sous le plancher");
+
+        for _ in 0..10 {
+            state.adjust_die_strength(1);
+        }
+        assert_eq!(state.die_strength, 6, "ne doit jamais dépasser 6");
+    }
+
+    #[test]
+    fn play_shot_respects_the_die_strength_cap() {
+        let mut state = test_state();
+        state.adjust_die_strength(-10); // plafonne au plancher (3)
+        assert_eq!(state.die_strength, DIE_STRENGTH_FLOOR);
+
+        for _ in 0..20 {
+            state.play_shot();
+            let die = state.last_die.expect("un dé a été tiré");
+            assert!(
+                die <= DIE_STRENGTH_FLOOR,
+                "le dé plafonné à {DIE_STRENGTH_FLOOR} ne doit jamais dépasser ce plafond, obtenu {die}"
+            );
+        }
+    }
+
+    #[test]
+    fn changing_club_resets_the_die_strength_cap() {
+        let mut state = test_state();
+        state.adjust_die_strength(-3);
+        assert_eq!(state.die_strength, DIE_STRENGTH_FLOOR);
+
+        state.cycle_club();
+        assert_eq!(state.die_strength, 6, "changer de club (Tab) doit remettre le plafond à 6");
+
+        state.adjust_die_strength(-2);
+        assert_eq!(state.die_strength, 4);
+
+        state.cycle_club_reverse();
+        assert_eq!(
+            state.die_strength, 6,
+            "changer de club (Shift+Tab) doit aussi remettre le plafond à 6"
+        );
+    }
+
+    #[test]
+    fn new_hole_resets_the_die_strength_cap() {
+        let mut state = two_hole_test_state();
+        state.adjust_die_strength(-4);
+        assert_eq!(state.die_strength, DIE_STRENGTH_FLOOR);
+
+        state.advance_hole();
+        assert_eq!(state.die_strength, 6, "un nouveau trou doit remettre le plafond à 6");
+
+        state.adjust_die_strength(-4);
+        assert_eq!(state.die_strength, DIE_STRENGTH_FLOOR);
+
+        state.restart_hole();
+        assert_eq!(state.die_strength, 6, "rejouer le trou doit aussi remettre le plafond à 6");
     }
 }
