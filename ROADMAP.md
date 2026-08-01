@@ -1002,6 +1002,22 @@ session de brainstorm par écran le moment venu.
   partie en était — pas de confirmation, la rapidité est tout l'intérêt.
   Purement `tui`, aucun changement côté `core`. Touche pressentie : `B`
   (libre en jeu), à confirmer.
+- Points de passage obligatoire sur un trou (pour forcer un vrai routage
+  plutôt que de compter sur les obstacles pour dissuader un tir direct —
+  un dogleg comme "Le Ravin" n'empêche pas vraiment un coup chanceux de
+  couper tout droit aujourd'hui). Mécanique plus lourde que la plupart des
+  idées de cette liste, à concevoir avant d'implémenter :
+  - Nouveau type de terrain (case + légende + support dans le builder,
+    dont le mode bloc/combler).
+  - Il faudrait vérifier si la trajectoire de **chaque** coup (pas
+    seulement le putt, où `passes_through`/`sample_line` existent déjà)
+    traverse cette case au cours du trou — aujourd'hui seul l'atterrissage
+    compte pour les coups aériens, le survol d'un point intermédiaire
+    n'est jamais vérifié.
+  - Gérer le cas où le joueur atteint le trou sans être passé par le
+    point obligatoire — un "pas encore fini" qu'il faut bien communiquer
+    (panneau dédié ou message clair), sinon ça ressemble à un bug plutôt
+    qu'à une règle du jeu.
 - Mode multijoueur local (tour par tour, même terminal)
 - Import de cartes depuis un format tiers
 - Statistiques de progression (moyenne de coups par trou sur plusieurs parties)
