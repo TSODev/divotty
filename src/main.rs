@@ -1082,6 +1082,35 @@ impl BuilderState {
         }
     }
 
+    /// Fait pivoter la grille dessinée à 90° (sens horaire) : largeur et
+    /// hauteur s'échangent, et le contenu suit la rotation plutôt que
+    /// d'être simplement réinterprété avec de nouvelles dimensions (ce qui
+    /// n'aurait aucun sens visuellement — le tee/le trou/les obstacles
+    /// doivent rester à la même place relative, comme si on tournait une
+    /// feuille de papier). `(x, y)` devient `(H-1-y, x)`, où `H` est
+    /// l'ancienne hauteur — coin haut-gauche → haut-droite, haut-droite →
+    /// bas-droite, etc. L'orientation bascule avec les dimensions (un trou
+    /// pensé à dominante horizontale devient vertical après rotation, et
+    /// inversement). Le curseur et la pile d'annulation ne correspondent
+    /// plus à rien de cohérent une fois pivoté — remis à zéro plutôt que
+    /// remappés à travers la rotation, pour rester simple.
+    fn rotate(&mut self) {
+        let old_width = self.width;
+        let old_height = self.height;
+        let mut new_tiles = vec![vec![TerrainKind::OutOfBounds; old_height]; old_width];
+        for (y, row) in self.tiles.iter().enumerate() {
+            for (x, terrain) in row.iter().enumerate() {
+                new_tiles[x][old_height - 1 - y] = *terrain;
+            }
+        }
+        self.width = old_height;
+        self.height = old_width;
+        self.tiles = new_tiles;
+        self.orientation = self.orientation.toggled();
+        self.cursor = Pos { x: 0, y: 0 };
+        self.undo_stack.clear();
+    }
+
     fn move_cursor(&mut self, dx: i32, dy: i32) {
         let nx = self.cursor.x as i32 + dx;
         let ny = self.cursor.y as i32 + dy;
@@ -1383,6 +1412,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                             KeyCode::Left => state.move_cursor(-1, 0),
                             KeyCode::Right => state.move_cursor(1, 0),
                             KeyCode::Char('u') | KeyCode::Char('U') => state.undo(),
+                            KeyCode::Char('r') | KeyCode::Char('R') => state.rotate(),
                             KeyCode::Char('n') | KeyCode::Char('N') => {
                                 state.text_input.clear();
                                 state.mode = BuilderMode::EditingName;
@@ -2513,6 +2543,72 @@ mod tests {
         builder.undo();
         assert_eq!(builder.tiles[0][0], TerrainKind::Rough, "l'ancien terrain doit être restauré");
         assert_eq!(builder.cursor, Pos { x: 0, y: 0 }, "le curseur doit revenir sur la case annulée");
+    }
+
+    #[test]
+    fn rotate_swaps_dimensions_and_turns_the_content_clockwise() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 3;
+        builder.height = 2;
+        // Un coin distinct par case pour vérifier sans ambiguïté où chacune
+        // atterrit après la rotation.
+        builder.tiles = vec![
+            vec![TerrainKind::Tee, TerrainKind::Fairway, TerrainKind::Hole],
+            vec![TerrainKind::Bunker, TerrainKind::Rough, TerrainKind::Water],
+        ];
+
+        builder.rotate();
+
+        assert_eq!(builder.width, 2, "l'ancienne hauteur devient la largeur");
+        assert_eq!(builder.height, 3, "l'ancienne largeur devient la hauteur");
+        // Sens horaire : haut-gauche → haut-droite, haut-droite → bas-droite,
+        // bas-droite → bas-gauche, bas-gauche → haut-gauche.
+        assert_eq!(
+            builder.tiles,
+            vec![
+                vec![TerrainKind::Bunker, TerrainKind::Tee],
+                vec![TerrainKind::Rough, TerrainKind::Fairway],
+                vec![TerrainKind::Water, TerrainKind::Hole],
+            ]
+        );
+    }
+
+    #[test]
+    fn rotate_toggles_orientation_and_resets_cursor_and_undo() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 3;
+        builder.height = 2;
+        builder.tiles = vec![vec![TerrainKind::Fairway; 3]; 2];
+        builder.cursor = Pos { x: 2, y: 1 };
+        builder.type_terrain(TerrainKind::Bunker); // pousse une entrée d'annulation
+        assert!(!builder.undo_stack.is_empty());
+
+        builder.rotate();
+
+        assert_eq!(builder.orientation, BuilderOrientation::Vertical);
+        assert_eq!(builder.cursor, Pos { x: 0, y: 0 });
+        assert!(builder.undo_stack.is_empty(), "l'historique d'annulation ne survit pas à une rotation");
+    }
+
+    #[test]
+    fn rotating_four_times_returns_to_the_original_grid() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 3;
+        builder.height = 2;
+        let original = vec![
+            vec![TerrainKind::Tee, TerrainKind::Fairway, TerrainKind::Hole],
+            vec![TerrainKind::Bunker, TerrainKind::Rough, TerrainKind::Water],
+        ];
+        builder.tiles = original.clone();
+
+        for _ in 0..4 {
+            builder.rotate();
+        }
+
+        assert_eq!(builder.width, 3);
+        assert_eq!(builder.height, 2);
+        assert_eq!(builder.tiles, original);
+        assert_eq!(builder.orientation, BuilderOrientation::Horizontal);
     }
 
     #[test]

@@ -435,6 +435,17 @@ Fait et testé :
   code hexadécimal `tmux send-keys -H`, le shell interceptant `;` et `é`
   tapés littéralement) : `;`/`f`/`é`/`w` peignent bien fairway/eau comme
   prévu.
+- Rotation à 90° de la grille en cours de dessin (`BuilderState::rotate`
+  dans `main.rs`) : touche `R` en mode dessin, largeur/hauteur s'échangent
+  et le contenu déjà peint pivote avec (sens horaire, coin haut-gauche →
+  haut-droite → bas-droite → bas-gauche → haut-gauche), plutôt qu'une
+  simple réinterprétation des dimensions qui n'aurait aucun sens
+  visuellement. L'orientation (`BuilderOrientation`, sens d'avancée
+  automatique de la frappe) bascule avec les dimensions. Curseur et pile
+  d'annulation sont remis à zéro après une rotation plutôt que remappés —
+  ils ne correspondraient plus à rien de cohérent, et remapper resterait
+  complexe pour un gain marginal. Vérifié en tmux (motif distinct dessiné
+  en haut à gauche, tourne bien en colonne verticale après `R`).
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion

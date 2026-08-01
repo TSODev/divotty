@@ -689,12 +689,12 @@ impl<'a> Widget for BuilderSidebarView<'a> {
             let base: &str = match self.mode {
                 BuilderMode::Drawing => match self.lang {
                     Lang::En => {
-                        "letters  paint\n↑↓←→  move\nU  undo\nN  rename\nS  save\n\
+                        "letters  paint\n↑↓←→  move\nU  undo\nR  rotate\nN  rename\nS  save\n\
                          Esc Esc  menu\nqq  quit"
                     }
                     Lang::Fr => {
-                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nN  renommer\n\
-                         S  sauver\nÉchap Échap  menu\nqq  quitter"
+                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nR  pivoter\n\
+                         N  renommer\nS  sauver\nÉchap Échap  menu\nqq  quitter"
                     }
                 },
                 BuilderMode::EditingName => match self.lang {

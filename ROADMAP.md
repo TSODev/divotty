@@ -287,6 +287,17 @@
       d'origine). Reste hors scope v1 (phase 10) : estimation de distance
       pendant l'édition et ajout/retrait d'un trou dans `course.yaml`.
 
+      **Ajout post-v1** : rotation de la grille à 90° (`BuilderState::rotate`
+      dans `main.rs`, touche `R` en mode dessin) — largeur/hauteur
+      s'échangent et le contenu déjà dessiné pivote avec (sens horaire,
+      `(x, y) → (H-1-y, x)`), plutôt qu'une simple réinterprétation des
+      dimensions qui n'aurait aucun sens visuellement. L'orientation
+      bascule avec les dimensions ; curseur et pile d'annulation sont
+      remis à zéro (ne correspondent plus à rien de cohérent après une
+      rotation) plutôt que remappés, pour rester simple. Testé (rotation
+      simple vérifiée case par case, 4 rotations reviennent à la grille de
+      départ) et vérifié en tmux.
+
       **Alternatives envisagées et écartées** :
       - Scan/photo du canevas PDF (`tools/hole_design_canvas.pdf`) dessiné
         au stylo (une couleur par terrain), converti en `.course` par

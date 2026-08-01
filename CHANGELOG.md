@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The hole builder can now rotate the grid 90° with `R`: width and height
+  swap and whatever you've already drawn turns with them, instead of just
+  reinterpreting the same data with new dimensions. Handy for switching a
+  hole between a horizontal and a vertical layout partway through drawing
+  it without starting over. The cursor and undo history reset on rotate,
+  since neither would still line up with anything afterward.
 - A course builder to assemble existing holes into a playable course:
   press `P` from the course menu, choose "+ New course" (name + difficulty)
   or an existing course to keep editing, then build the ordered hole list
