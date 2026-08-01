@@ -61,7 +61,7 @@ pub enum BuilderMode {
     ConfirmOverwrite,
 }
 
-fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
+pub(crate) fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
     if y >= area.y + area.height {
         return;
     }
@@ -77,7 +77,7 @@ fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
 /// mots — utilisé pour les messages de sauvegarde/erreur dans le panneau
 /// Contrôles de `BuilderSidebarView`, trop étroit (~24 caractères utiles)
 /// pour une seule ligne comme dans l'ancien bandeau pleine largeur.
-fn wrap_text(text: &str, width: usize) -> Vec<String> {
+pub(crate) fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
     for word in text.split_whitespace() {
@@ -300,7 +300,7 @@ impl<'a> Widget for HolePickerView<'a> {
 /// fenêtre reste sur `0` ; au-delà, elle avance juste assez pour révéler
 /// `selected` (comme dernière ligne visible), sans jamais dépasser
 /// `total - available` (pas de zone vide en bas une fois tout défilé).
-fn list_scroll_offset(selected: usize, total: usize, available: usize) -> usize {
+pub(crate) fn list_scroll_offset(selected: usize, total: usize, available: usize) -> usize {
     if available == 0 || total <= available {
         return 0;
     }

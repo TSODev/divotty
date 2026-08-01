@@ -87,8 +87,12 @@ impl<'a> Widget for CourseMenuState<'a> {
             }
         } else {
             match self.lang {
-                Lang::En => "↑ ↓ select   Enter play   E new hole   L language   qq quit",
-                Lang::Fr => "↑ ↓ choisir   Entrée jouer   E nouveau trou   L langue   qq quitter",
+                Lang::En => {
+                    "↑ ↓ select   Enter play   E new hole   P build course   L language   qq quit"
+                }
+                Lang::Fr => {
+                    "↑ ↓ choisir   Entrée jouer   E nouveau trou   P assembler parcours   L langue   qq quitter"
+                }
             }
         };
         let hint_y = inner.y + inner.height.saturating_sub(1);

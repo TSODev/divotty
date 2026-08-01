@@ -594,16 +594,22 @@
           carte" ci-dessous (la sauvegarde du builder *est* déjà une
           validation) — à réévaluer si un outil de lint séparé reste utile
           une fois le builder construit.
-- [ ] Builder de parcours : assembler des trous existants (créés par le
-      builder de trous) dans un parcours — `course.yaml` + choix de
-      l'ordre. Idée discutée mais **non implémentée pour l'instant**, à
-      reprendre après la phase 9 du builder de trous (charger un fichier
-      existant), dont le sélecteur de fichiers serait réutilisé ici pour
-      choisir parmi les trous disponibles.
-      - Écran de sélection revu : lister les parcours (comme aujourd'hui),
-        puis une deuxième liste des trous existants qui ne sont insérés
-        dans aucun parcours — pour repérer facilement ce qui reste à
-        assembler.
+- [x] Builder de parcours : assembler des trous existants (créés par le
+      builder de trous) dans un parcours — `course.yaml` + choix de l'ordre.
+      Implémenté (`src/tui/course_builder.rs` + les écrans/état dans
+      `main.rs`) : touche `P` au menu principal ouvre
+      `pick_course_to_build` ("+ Nouveau parcours" ou un parcours existant
+      avec dossier sur disque — un parcours embarqué n'apparaît pas, il n'y
+      a rien à réécrire), puis pour un parcours neuf `setup_course_builder`
+      (nom + difficulté 1-4). L'écran d'assemblage
+      (`run_course_builder`/`CourseBuilderState`) permet : `A` ajoute un
+      trou via un sous-écran de sélection (`pick_hole_to_add`, toute la
+      bibliothèque `courses/*/*.course`, avec aperçu), `X` retire de la
+      liste, `[`/`]` réordonnent, `N` renomme le parcours, `←`/`→` changent
+      la difficulté, `S` sauvegarde. `courses` (chargé une fois au
+      démarrage) est rechargé au retour au menu après un passage par le
+      builder de parcours, pour que le parcours neuf/modifié apparaisse
+      immédiatement sans relancer le jeu.
       - **Un trou peut être utilisé dans plusieurs parcours.** Modèle
         retenu pour ça (déjà discuté et tranché, à l'opposé d'une
         bibliothèque de trous référencée par pointeur) : une bibliothèque
@@ -624,6 +630,16 @@
         automatiquement sur les copies déjà distribuées. Pas vu comme un
         problème : ça permet même de personnaliser légèrement la copie
         d'un trou pour un parcours donné sans affecter les autres.
+        En pratique, `CourseBuilderState::add_hole` résout les collisions
+        de nom de fichier (`unique_course_hole_filename`, compteur `_2`,
+        `_3`...) et retirer un trou de la liste (`X`) n'efface jamais son
+        fichier physique — même principe "ne jamais supprimer
+        automatiquement" que le reste du projet.
+      - Non fait pour l'instant (pas demandé, pas bloquant) : l'écran de
+        sélection ne montre pas de deuxième liste "trous orphelins non
+        assignés à un parcours" — juste "+ Nouveau parcours" puis les
+        parcours existants. À reconsidérer si retrouver un trou non encore
+        assemblé devient pénible en pratique.
 - [ ] Partage de parcours créés avec le builder — pas encore tranché
       comment, mais un fichier `.course`/`course.yaml` est déjà du texte
       brut : le partage "à la main" (copier le fichier dans le dossier

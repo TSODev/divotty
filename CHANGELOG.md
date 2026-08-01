@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- A course builder to assemble existing holes into a playable course:
+  press `P` from the course menu, choose "+ New course" (name + difficulty)
+  or an existing course to keep editing, then build the ordered hole list
+  from a picker that browses every `.course` file found under `courses/`
+  (library included) with a live preview. `A` adds the selected hole, `X`
+  removes it from the list, `[`/`]` reorder it, `N` renames the course,
+  `←`/`→` change its difficulty, `S` saves. Adding a hole to a course always
+  copies its file rather than referencing it — the same hole can be reused,
+  independently, across as many courses as you like, and name collisions
+  are resolved automatically with a counter. Removing a hole from the list
+  never deletes its file. The course list on the main menu refreshes as
+  soon as you leave the builder, so a course you just built or edited shows
+  up immediately.
 - Once you hole out, the map replaces the (now pointless) aim preview with
   a recap of the whole hole: a red ball at each intermediate stop and a
   trail of yellow balls connecting them, from tee to cup.

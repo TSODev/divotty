@@ -12,7 +12,7 @@ pub mod scoring;
 pub mod shot;
 pub mod terrain;
 
-pub use course::{Course, Hole, HoleMeta, Pos, COURSE_HEIGHT, COURSE_WIDTH};
+pub use course::{Course, CourseIndex, Hole, HoleMeta, Pos, COURSE_HEIGHT, COURSE_WIDTH};
 pub use scoring::{HoleScore, ScoreLabel, Scorecard};
 pub use shot::{preview_shot, resolve_shot, Club, Direction, Shot, ShotPreview, ShotResult, Wind};
 pub use terrain::TerrainKind;

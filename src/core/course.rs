@@ -258,15 +258,21 @@ impl Hole {
     }
 }
 
-#[derive(Deserialize)]
-struct CourseIndex {
-    name: String,
-    difficulty: u8,
-    holes: Vec<String>,
+/// Nom + difficulté + liste ordonnée de *noms de fichiers* de trous (pas
+/// les trous chargés eux-mêmes) — la forme exacte du contenu d'un
+/// `course.yaml`. `Course::load_from_dir` n'en garde qu'une lecture (parse,
+/// charge chaque trou, jette la liste de noms) ; le builder de parcours a
+/// besoin de la garder et de la réécrire, d'où `pub` et `Serialize` ici
+/// plutôt qu'un type strictement privé/lecture seule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CourseIndex {
+    pub name: String,
+    pub difficulty: u8,
+    pub holes: Vec<String>,
 }
 
 impl CourseIndex {
-    fn parse(yaml: &str) -> Result<Self, CourseError> {
+    pub fn parse(yaml: &str) -> Result<Self, CourseError> {
         let index: CourseIndex = serde_yaml::from_str(yaml)?;
         if !(1..=4).contains(&index.difficulty) {
             return Err(CourseError::InvalidDifficulty {
@@ -275,6 +281,30 @@ impl CourseIndex {
             });
         }
         Ok(index)
+    }
+
+    /// Sérialise vers le contenu texte d'un fichier `course.yaml` — inverse
+    /// de `parse`. Utilisé par le builder de parcours pour écrire un
+    /// parcours neuf ou modifié sur disque.
+    pub fn to_yaml_string(&self) -> Result<String, CourseError> {
+        Ok(serde_yaml::to_string(self)?)
+    }
+
+    /// Lit et parse le `course.yaml` d'un dossier, sans charger les trous
+    /// qu'il référence (contrairement à `Course::load_from_dir`) — c'est
+    /// justement la liste de noms de fichiers, pas les trous eux-mêmes, que
+    /// le builder de parcours a besoin de modifier avant de la réécrire.
+    pub fn load_from_dir(dir: &Path) -> Result<Self, CourseError> {
+        let raw = std::fs::read_to_string(dir.join("course.yaml"))?;
+        Self::parse(&raw)
+    }
+
+    /// Écrit ce `course.yaml` dans `dir`, créant le dossier s'il n'existe
+    /// pas encore (cas d'un parcours neuf créé par le builder de parcours).
+    pub fn write_to_dir(&self, dir: &Path) -> Result<(), CourseError> {
+        std::fs::create_dir_all(dir)?;
+        std::fs::write(dir.join("course.yaml"), self.to_yaml_string()?)?;
+        Ok(())
     }
 }
 
@@ -593,5 +623,45 @@ mod tests {
 
         let local = hole.local_tiles();
         assert_eq!(local, hole.tiles);
+    }
+
+    #[test]
+    fn course_index_to_yaml_string_roundtrips() {
+        let index = CourseIndex {
+            name: "Mon parcours".to_string(),
+            difficulty: 3,
+            holes: vec!["hole_01.course".to_string(), "hole_02.course".to_string()],
+        };
+
+        let yaml = index.to_yaml_string().expect("la sérialisation doit réussir");
+        let reparsed = CourseIndex::parse(&yaml).expect("la sortie doit se re-parser");
+
+        assert_eq!(reparsed.name, index.name);
+        assert_eq!(reparsed.difficulty, index.difficulty);
+        assert_eq!(reparsed.holes, index.holes);
+    }
+
+    #[test]
+    fn course_index_write_to_dir_creates_the_directory_and_roundtrips() {
+        let dir = std::env::temp_dir().join(format!(
+            "divotty_test_course_index_write_{}",
+            std::process::id()
+        ));
+        // Le dossier n'existe pas encore : `write_to_dir` doit le créer.
+        assert!(!dir.exists());
+
+        let index = CourseIndex {
+            name: "Parcours neuf".to_string(),
+            difficulty: 2,
+            holes: vec!["hole_01.course".to_string()],
+        };
+        index.write_to_dir(&dir).expect("l'écriture doit réussir");
+
+        let reloaded = CourseIndex::load_from_dir(&dir).expect("la relecture doit réussir");
+        assert_eq!(reloaded.name, index.name);
+        assert_eq!(reloaded.difficulty, index.difficulty);
+        assert_eq!(reloaded.holes, index.holes);
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

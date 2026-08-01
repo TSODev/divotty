@@ -121,9 +121,11 @@ src/tui/   → render.rs    (CourseView + Viewport, superpose le guide de trajec
              sidebar.rs     (7 panneaux d'info : Titre, Trou, Score, Club, Dernier coup, Visée, Contrôles)
              menu.rs         (CourseMenuState : écran de sélection de parcours)
              scorecard.rs     (ScorecardView : écran plein cadre de fin de partie, détail trou par trou + total)
-             lang.rs           (Lang { En, Fr }, défaut En — bascule avec la touche L)
-             format.rs          (helpers d'affichage partagés : étoiles de difficulté, couleur/texte de score)
-             mod.rs              (ré-exports publics du module tui)
+             builder.rs        (écran d'édition d'un trou : dessiner/charger/dupliquer un fichier .course)
+             course_builder.rs  (écran d'assemblage d'un parcours à partir de trous existants)
+             lang.rs             (Lang { En, Fr }, défaut En — bascule avec la touche L)
+             format.rs            (helpers d'affichage partagés : étoiles de difficulté, couleur/texte de score)
+             mod.rs                (ré-exports publics du module tui)
 
 src/main.rs → `mod core; mod tui;` + menu de sélection → GameState → boucle
               de jeu (enchaînement des trous, écran de scorecard en fin de
@@ -389,13 +391,38 @@ Fait et testé :
   (simulant un `cargo install`), sauvegarde et trou du builder atterrissent
   dans `~/.local/share/divotty/` et sont retrouvés à la relance depuis ce
   même dossier vide.
+- Builder de parcours (`src/tui/course_builder.rs` + `CourseBuilderState`/
+  `run_course_builder` dans `main.rs`, voir `ROADMAP.md` pour le détail) :
+  touche `P` au menu principal ouvre un écran de sélection
+  (`pick_course_to_build`, "+ Nouveau parcours" ou un parcours existant
+  avec dossier sur disque), puis pour un parcours neuf un petit formulaire
+  nom + difficulté (`setup_course_builder`). L'écran d'assemblage liste les
+  trous du parcours (nom de fichier + repère "(new)" tant qu'il n'est pas
+  encore physiquement copié) avec un aperçu à droite (réutilise
+  `HolePreviewView` du builder de trous) : `A` ouvre un sous-écran de
+  sélection parmi toute la bibliothèque (`courses/*/*.course`,
+  `pick_hole_to_add`), `X` retire un trou de la liste (jamais son fichier
+  physique), `[`/`]` réordonnent, `N` renomme, `←`/`→` changent la
+  difficulté, `S` sauvegarde (écrit `course.yaml` et copie les fichiers en
+  attente). Modèle "bibliothèque + duplication" : ajouter un trou à un
+  parcours **copie** son fichier `.course`, jamais une référence par
+  pointeur — un même trou peut ainsi servir dans plusieurs parcours de
+  façon indépendante (collisions de nom résolues par un compteur,
+  `unique_course_hole_filename`). `CourseIndex` (frontmatter
+  `course.yaml`) est devenu `pub`/`Serialize` avec `load_from_dir`/
+  `write_to_dir`/`to_yaml_string` pour ça. La liste `courses` chargée au
+  démarrage est rechargée après un passage par le builder de parcours, pour
+  que le résultat apparaisse immédiatement au menu sans relancer le jeu.
+  Vérifié en tmux : création d'un parcours à 2 trous depuis la
+  bibliothèque, réordonnancement, sauvegarde, apparition immédiate au menu,
+  partie jouée jusqu'au bout sur ce parcours.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 41 tests unitaires dans
-  `src/main.rs` (92 au total avec `core` et `tui`), mais rien qui simule un
+  `adjust_die_strength`...) a maintenant 53 tests unitaires dans
+  `src/main.rs` (106 au total avec `core` et `tui`), mais rien qui simule un
   vrai terminal/`crossterm`.
 
 ## Publication crates.io

@@ -8,12 +8,13 @@ use crossterm::{
     execute,
 };
 use crate::core::{
-    preview_shot, resolve_shot, Club, Course, Direction, Hole, HoleMeta, HoleScore, Pos, Scorecard,
-    Shot, ShotResult, TerrainKind, Wind, COURSE_HEIGHT, COURSE_WIDTH,
+    preview_shot, resolve_shot, Club, Course, CourseIndex, Direction, Hole, HoleMeta, HoleScore,
+    Pos, Scorecard, Shot, ShotResult, TerrainKind, Wind, COURSE_HEIGHT, COURSE_WIDTH,
 };
 use crate::tui::{
     BuilderMode, BuilderOrientation, BuilderSetupView, BuilderSidebarView, BuilderView,
-    CourseMenuState, CourseView, HolePickerView, HolePreviewView, Lang, ScorecardView,
+    CourseBuilderMode, CourseBuilderSidebarView, CourseMenuState, CoursePickerView, CourseSetupView,
+    CourseView, HoleAddPickerView, HolePickerView, HolePreviewView, Lang, ScorecardView,
     SidebarState, Viewport,
 };
 use directories::ProjectDirs;
@@ -455,7 +456,7 @@ impl GameState {
 
 fn main() -> Result<()> {
     let data_root = resolve_data_root();
-    let courses = discover_courses(&data_root)?;
+    let mut courses = discover_courses(&data_root)?;
 
     enable_raw_mode()?;
     let mut stdout_handle = stdout();
@@ -525,6 +526,34 @@ fn main() -> Result<()> {
                         BuilderExit::BackToMenu => continue,
                     }
                 }
+                MenuChoice::BuildCourse => {
+                    let Some(launch) = pick_course_to_build(&mut terminal, &mut lang, &courses)? else {
+                        continue;
+                    };
+                    let mut builder = match launch {
+                        CourseBuilderLaunch::New => {
+                            let Some((name, difficulty)) =
+                                setup_course_builder(&mut terminal, &mut lang)?
+                            else {
+                                continue;
+                            };
+                            let courses_root = data_root.join("courses");
+                            let slug = unique_course_slug(&courses_root, &name);
+                            CourseBuilderState::new(courses_root.join(slug), name, difficulty, lang)
+                        }
+                        CourseBuilderLaunch::Existing(dir) => {
+                            let index = CourseIndex::load_from_dir(&dir)?;
+                            CourseBuilderState::from_existing(dir, index, lang)
+                        }
+                    };
+                    match run_course_builder(&mut terminal, &mut builder, &data_root)? {
+                        BuilderExit::Quit => return Ok(()),
+                        BuilderExit::BackToMenu => {
+                            courses = discover_courses(&data_root)?;
+                            continue;
+                        }
+                    }
+                }
             }
         }
     })();
@@ -540,6 +569,7 @@ enum MenuChoice {
     Play(usize),
     Resume,
     NewHole,
+    BuildCourse,
     Quit,
 }
 
@@ -603,6 +633,7 @@ fn select_course<B: ratatui::backend::Backend>(
                         return Ok(MenuChoice::Resume)
                     }
                     KeyCode::Char('e') | KeyCode::Char('E') => return Ok(MenuChoice::NewHole),
+                    KeyCode::Char('p') | KeyCode::Char('P') => return Ok(MenuChoice::BuildCourse),
                     KeyCode::Up => selected = selected.saturating_sub(1),
                     KeyCode::Down => selected = (selected + 1).min(course_refs.len().saturating_sub(1)),
                     KeyCode::Enter => return Ok(MenuChoice::Play(selected)),
@@ -1470,6 +1501,495 @@ fn finish_save(state: &mut BuilderState, path: PathBuf) {
     state.mode = BuilderMode::Drawing;
 }
 
+/// Nettoie un nom de parcours tapé à la main vers un nom de dossier sous
+/// `<data_root>/courses/` — réutilise `sanitize_hole_filename` (déjà pensé
+/// pour éliminer tout risque de remontée `..`/chemin absolu, peu importe
+/// qu'il serve ici à un nom de dossier plutôt qu'un nom de fichier) puis
+/// ajoute un compteur en cas de collision avec un dossier déjà existant,
+/// jamais d'écrasement silencieux d'un parcours du même nom.
+fn unique_course_slug(courses_root: &Path, name: &str) -> String {
+    let base = sanitize_hole_filename(name);
+    if !courses_root.join(&base).exists() {
+        return base;
+    }
+    let mut counter = 2;
+    loop {
+        let candidate = format!("{base}_{counter}");
+        if !courses_root.join(&candidate).exists() {
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+/// Trouve un nom de fichier libre pour copier `base_filename` dans un
+/// parcours : essaie d'abord le nom tel quel, puis ajoute un compteur en cas
+/// de collision — à la fois avec les autres trous déjà dans la liste
+/// (`existing_filenames`, pas encore forcément écrits sur disque) et avec le
+/// contenu réel de `dir` (cas d'un parcours existant rouvert dans le
+/// builder). Ne modifie jamais le fichier source : c'est toujours une copie
+/// (voir le principe "bibliothèque + duplication" du module).
+fn unique_course_hole_filename(existing_filenames: &[String], dir: &Path, base_filename: &str) -> String {
+    let is_free = |candidate: &str| {
+        !existing_filenames.iter().any(|f| f == candidate) && !dir.join(candidate).exists()
+    };
+    if is_free(base_filename) {
+        return base_filename.to_string();
+    }
+    let (stem, ext) = match base_filename.rsplit_once('.') {
+        Some((stem, ext)) => (stem, ext),
+        None => (base_filename, ""),
+    };
+    let mut counter = 2;
+    loop {
+        let candidate = if ext.is_empty() {
+            format!("{stem}_{counter}")
+        } else {
+            format!("{stem}_{counter}.{ext}")
+        };
+        if is_free(&candidate) {
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+/// Un trou dans la liste ordonnée d'un parcours en cours d'assemblage — nom
+/// de fichier final dans le dossier du parcours, et source à copier tant que
+/// le fichier physique n'y est pas encore (voir `ROADMAP.md`, "Builder de
+/// parcours" : insérer un trou = dupliquer le fichier, jamais le référencer
+/// par pointeur, pour qu'un même trou reste réutilisable indépendamment
+/// dans plusieurs parcours).
+struct CourseHoleEntry {
+    filename: String,
+    /// `Some(chemin)` tant que ce trou n'a pas encore été physiquement copié
+    /// dans le dossier du parcours (ajouté via le builder, pas encore
+    /// sauvegardé) — `None` pour un trou déjà présent sur disque (parcours
+    /// existant rouvert, ou juste sauvegardé).
+    pending_source: Option<PathBuf>,
+}
+
+/// État de l'écran d'assemblage de parcours (voir `ROADMAP.md`, "Builder de
+/// parcours"). Édite un seul `course.yaml` à la fois : nom, difficulté,
+/// liste ordonnée de trous. La sauvegarde écrit `course.yaml`
+/// (`CourseIndex::write_to_dir`) et copie sur disque tout trou encore
+/// `pending_source` — sauvegarder, c'est réussir ces deux étapes.
+struct CourseBuilderState {
+    dir: PathBuf,
+    name: String,
+    difficulty: u8,
+    holes: Vec<CourseHoleEntry>,
+    selected: usize,
+    mode: CourseBuilderMode,
+    text_input: String,
+    message: Option<String>,
+    lang: Lang,
+    quit_confirm: bool,
+    /// Deuxième pression sur `Échap` en attente (retour au menu, distinct de
+    /// `quit_confirm` qui quitte l'application entière) — même principe que
+    /// `BuilderState::exit_confirm`.
+    exit_confirm: bool,
+}
+
+impl CourseBuilderState {
+    fn new(dir: PathBuf, name: String, difficulty: u8, lang: Lang) -> Self {
+        CourseBuilderState {
+            dir,
+            name,
+            difficulty,
+            holes: Vec::new(),
+            selected: 0,
+            mode: CourseBuilderMode::Listing,
+            text_input: String::new(),
+            message: None,
+            lang,
+            quit_confirm: false,
+            exit_confirm: false,
+        }
+    }
+
+    /// Charge un parcours existant (déjà lu depuis `course.yaml`) pour
+    /// édition — chaque trou qu'il référence est déjà physiquement présent
+    /// dans `dir`, donc sans `pending_source`.
+    fn from_existing(dir: PathBuf, index: CourseIndex, lang: Lang) -> Self {
+        CourseBuilderState {
+            dir,
+            name: index.name,
+            difficulty: index.difficulty,
+            holes: index
+                .holes
+                .into_iter()
+                .map(|filename| CourseHoleEntry { filename, pending_source: None })
+                .collect(),
+            selected: 0,
+            mode: CourseBuilderMode::Listing,
+            text_input: String::new(),
+            message: None,
+            lang,
+            quit_confirm: false,
+            exit_confirm: false,
+        }
+    }
+
+    /// Ajoute un trou choisi depuis la bibliothèque (voir `pick_hole_to_add`)
+    /// : le nom de fichier d'origine est repris tel quel s'il est libre,
+    /// sinon un compteur est ajouté (`unique_course_hole_filename`) — jamais
+    /// de collision silencieuse avec un trou déjà dans la liste ou déjà
+    /// présent sur disque dans ce dossier de parcours.
+    fn add_hole(&mut self, source: PathBuf) {
+        let base_filename = source
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("hole.course")
+            .to_string();
+        let existing: Vec<String> = self.holes.iter().map(|h| h.filename.clone()).collect();
+        let filename = unique_course_hole_filename(&existing, &self.dir, &base_filename);
+        self.holes.push(CourseHoleEntry { filename, pending_source: Some(source) });
+        self.selected = self.holes.len() - 1;
+    }
+
+    /// Retire le trou sélectionné de la liste — jamais le fichier physique
+    /// sous-jacent (voir le principe "ne jamais supprimer un fichier
+    /// automatiquement" déjà appliqué ailleurs dans le projet) : un trou
+    /// déjà copié dans le dossier du parcours y reste, simplement plus
+    /// référencé par `course.yaml` une fois sauvegardé.
+    fn remove_selected(&mut self) {
+        if self.holes.is_empty() {
+            return;
+        }
+        self.holes.remove(self.selected);
+        if self.selected >= self.holes.len() {
+            self.selected = self.holes.len().saturating_sub(1);
+        }
+    }
+
+    fn move_selected_up(&mut self) {
+        if self.selected == 0 || self.holes.is_empty() {
+            return;
+        }
+        self.holes.swap(self.selected, self.selected - 1);
+        self.selected -= 1;
+    }
+
+    fn move_selected_down(&mut self) {
+        if self.holes.len() < 2 || self.selected + 1 >= self.holes.len() {
+            return;
+        }
+        self.holes.swap(self.selected, self.selected + 1);
+        self.selected += 1;
+    }
+
+    /// Écrit `course.yaml` et copie sur disque tout trou encore
+    /// `pending_source` — refuse une liste vide (un parcours sans trou
+    /// ne peut pas se jouer, voir `GameState::new`).
+    fn save(&mut self) -> Result<()> {
+        if self.holes.is_empty() {
+            return Err(anyhow::anyhow!(match self.lang {
+                Lang::En => "add at least one hole before saving",
+                Lang::Fr => "ajoutez au moins un trou avant de sauvegarder",
+            }));
+        }
+        std::fs::create_dir_all(&self.dir)?;
+        for hole in &self.holes {
+            if let Some(source) = &hole.pending_source {
+                std::fs::copy(source, self.dir.join(&hole.filename))?;
+            }
+        }
+        let index = CourseIndex {
+            name: self.name.clone(),
+            difficulty: self.difficulty,
+            holes: self.holes.iter().map(|h| h.filename.clone()).collect(),
+        };
+        index.write_to_dir(&self.dir)?;
+        for hole in &mut self.holes {
+            hole.pending_source = None;
+        }
+        Ok(())
+    }
+}
+
+/// Choix fait par le joueur à l'écran de sélection du builder de parcours
+/// (`pick_course_to_build`) : un parcours neuf, ou un parcours existant
+/// (forcément avec un dossier sur disque, voir `CoursePickerView`) rouvert
+/// pour modification.
+enum CourseBuilderLaunch {
+    New,
+    Existing(PathBuf),
+}
+
+/// Écran d'entrée du builder de parcours : "+ Nouveau parcours" en premier,
+/// puis chaque parcours ayant un dossier sur disque parmi ceux déjà chargés
+/// au lancement du jeu (`courses` dans `main`) — un parcours embarqué (pas
+/// de dossier) n'est pas proposé, il n'y a rien à réécrire. `None` si
+/// annulé (Échap, retour au menu).
+fn pick_course_to_build<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    lang: &mut Lang,
+    courses: &[(Option<PathBuf>, Course)],
+) -> Result<Option<CourseBuilderLaunch>> {
+    let editable: Vec<(PathBuf, &Course)> = courses
+        .iter()
+        .filter_map(|(dir, course)| dir.as_ref().map(|d| (d.clone(), course)))
+        .collect();
+    let mut selected = 0usize;
+    let total = editable.len() + 1;
+
+    loop {
+        terminal.draw(|frame| {
+            frame.render_widget(
+                CoursePickerView { lang: *lang, courses: &editable, selected },
+                frame.size(),
+            );
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Esc => return Ok(None),
+                    KeyCode::Up => selected = selected.saturating_sub(1),
+                    KeyCode::Down => selected = (selected + 1).min(total.saturating_sub(1)),
+                    KeyCode::Enter => {
+                        if selected == 0 {
+                            return Ok(Some(CourseBuilderLaunch::New));
+                        }
+                        return Ok(Some(CourseBuilderLaunch::Existing(editable[selected - 1].0.clone())));
+                    }
+                    KeyCode::Char('l') | KeyCode::Char('L') => *lang = lang.next(),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// Petit formulaire avant de créer un parcours neuf : nom + difficulté.
+/// `None` si annulé (Échap, retour au menu).
+fn setup_course_builder<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    lang: &mut Lang,
+) -> Result<Option<(String, u8)>> {
+    let mut name = String::new();
+    let mut difficulty: u8 = 1;
+
+    loop {
+        terminal.draw(|frame| {
+            frame.render_widget(
+                CourseSetupView { lang: *lang, name: &name, difficulty },
+                frame.size(),
+            );
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Esc => return Ok(None),
+                    KeyCode::Enter => {
+                        let trimmed = name.trim();
+                        if !trimmed.is_empty() {
+                            return Ok(Some((trimmed.to_string(), difficulty)));
+                        }
+                    }
+                    KeyCode::Up => difficulty = (difficulty + 1).min(4),
+                    KeyCode::Down => difficulty = difficulty.saturating_sub(1).max(1),
+                    KeyCode::Backspace => {
+                        name.pop();
+                    }
+                    KeyCode::Char(c) => name.push(c),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// Sous-étape "Ajouter un trou" : liste tous les fichiers `.course` trouvés
+/// sous `<data_root>/courses/*/` (bibliothèque comprise, voir
+/// `discover_hole_files`) avec aperçu — choisir une entrée l'ajoute
+/// directement (toujours une duplication, pas de confirmation modifier/
+/// dupliquer contrairement au builder de trous, voir `HoleAddPickerView`).
+/// `None` si annulé (Échap, retour à l'écran d'assemblage).
+fn pick_hole_to_add<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    lang: &mut Lang,
+    data_root: &Path,
+) -> Result<Option<PathBuf>> {
+    let courses_root = data_root.join("courses");
+    let files = discover_hole_files(&courses_root);
+    let mut selected = 0usize;
+
+    loop {
+        let preview: Option<Result<Hole, String>> = files.get(selected).map(|path| {
+            std::fs::read_to_string(path)
+                .map_err(|e| e.to_string())
+                .and_then(|raw| Hole::parse(&raw).map_err(|e| e.to_string()))
+        });
+
+        terminal.draw(|frame| {
+            let columns = Layout::default()
+                .direction(LayoutDirection::Horizontal)
+                .constraints([Constraint::Length(36), Constraint::Min(0)])
+                .split(frame.size());
+
+            frame.render_widget(
+                HoleAddPickerView { lang: *lang, files: &files, selected, courses_root: &courses_root },
+                columns[0],
+            );
+            frame.render_widget(
+                HolePreviewView { lang: *lang, preview: preview.as_ref() },
+                columns[1],
+            );
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Esc => return Ok(None),
+                    KeyCode::Up => selected = selected.saturating_sub(1),
+                    KeyCode::Down => selected = (selected + 1).min(files.len().saturating_sub(1)),
+                    KeyCode::Enter if !files.is_empty() => return Ok(Some(files[selected].clone())),
+                    KeyCode::Char('l') | KeyCode::Char('L') => *lang = lang.next(),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// Boucle principale de l'écran d'assemblage : liste des trous du parcours,
+/// ajout (sous-écran `pick_hole_to_add`), retrait, réordonnancement,
+/// renommage, réglage de la difficulté, sauvegarde.
+fn run_course_builder<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    state: &mut CourseBuilderState,
+    data_root: &Path,
+) -> Result<BuilderExit> {
+    loop {
+        let preview: Option<Result<Hole, String>> = state.holes.get(state.selected).map(|hole| {
+            let path = hole.pending_source.clone().unwrap_or_else(|| state.dir.join(&hole.filename));
+            std::fs::read_to_string(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|raw| Hole::parse(&raw).map_err(|e| e.to_string()))
+        });
+
+        terminal.draw(|frame| {
+            let columns = Layout::default()
+                .direction(LayoutDirection::Horizontal)
+                .constraints([Constraint::Length(32), Constraint::Min(0)])
+                .split(frame.size());
+
+            let hole_labels: Vec<(String, bool)> = state
+                .holes
+                .iter()
+                .map(|h| (h.filename.clone(), h.pending_source.is_some()))
+                .collect();
+
+            frame.render_widget(
+                CourseBuilderSidebarView {
+                    lang: state.lang,
+                    name: &state.name,
+                    difficulty: state.difficulty,
+                    holes: &hole_labels,
+                    selected: state.selected,
+                    mode: state.mode,
+                    text_input: &state.text_input,
+                    message: state.message.as_deref(),
+                    quit_confirm: state.quit_confirm,
+                    exit_confirm: state.exit_confirm,
+                },
+                columns[0],
+            );
+
+            frame.render_widget(
+                HolePreviewView { lang: state.lang, preview: preview.as_ref() },
+                columns[1],
+            );
+        })?;
+
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                match state.mode {
+                    CourseBuilderMode::Listing => {
+                        state.message = None;
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                                if state.quit_confirm {
+                                    return Ok(BuilderExit::Quit);
+                                }
+                                state.quit_confirm = true;
+                                state.exit_confirm = false;
+                                continue;
+                            }
+                            KeyCode::Esc => {
+                                if state.exit_confirm {
+                                    return Ok(BuilderExit::BackToMenu);
+                                }
+                                state.exit_confirm = true;
+                                state.quit_confirm = false;
+                                continue;
+                            }
+                            KeyCode::Up => {
+                                state.selected = state.selected.saturating_sub(1);
+                            }
+                            KeyCode::Down => {
+                                state.selected =
+                                    (state.selected + 1).min(state.holes.len().saturating_sub(1));
+                            }
+                            KeyCode::Left => {
+                                state.difficulty = state.difficulty.saturating_sub(1).max(1);
+                            }
+                            KeyCode::Right => {
+                                state.difficulty = (state.difficulty + 1).min(4);
+                            }
+                            KeyCode::Char('a') | KeyCode::Char('A') => {
+                                if let Some(path) = pick_hole_to_add(terminal, &mut state.lang, data_root)? {
+                                    state.add_hole(path);
+                                }
+                            }
+                            KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Delete => {
+                                state.remove_selected();
+                            }
+                            KeyCode::Char('[') => state.move_selected_up(),
+                            KeyCode::Char(']') => state.move_selected_down(),
+                            KeyCode::Char('n') | KeyCode::Char('N') => {
+                                state.text_input = state.name.clone();
+                                state.mode = CourseBuilderMode::EditingName;
+                            }
+                            KeyCode::Char('s') | KeyCode::Char('S') => match state.save() {
+                                Ok(()) => {
+                                    state.message = Some(match state.lang {
+                                        Lang::En => format!("Saved to {}", state.dir.display()),
+                                        Lang::Fr => format!("Sauvegardé dans {}", state.dir.display()),
+                                    });
+                                }
+                                Err(err) => state.message = Some(err.to_string()),
+                            },
+                            KeyCode::Char('l') | KeyCode::Char('L') => state.lang = state.lang.next(),
+                            _ => {}
+                        }
+                        state.quit_confirm = false;
+                        state.exit_confirm = false;
+                    }
+                    CourseBuilderMode::EditingName => match key.code {
+                        KeyCode::Enter => {
+                            let trimmed = state.text_input.trim();
+                            if !trimmed.is_empty() {
+                                state.name = trimmed.to_string();
+                            }
+                            state.mode = CourseBuilderMode::Listing;
+                        }
+                        KeyCode::Esc => state.mode = CourseBuilderMode::Listing,
+                        KeyCode::Backspace => {
+                            state.text_input.pop();
+                        }
+                        KeyCode::Char(c) => state.text_input.push(c),
+                        _ => {}
+                    },
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2072,5 +2592,157 @@ mod tests {
         let builder = BuilderState::from_existing_hole(&hole, Some(path.clone()), Lang::Fr);
         assert_eq!(builder.orientation, BuilderOrientation::Vertical);
         assert_eq!(builder.source_path, Some(path));
+    }
+
+    #[test]
+    fn unique_course_slug_keeps_a_free_name_untouched() {
+        let root = std::env::temp_dir().join(format!("divotty_test_slug_free_{}", std::process::id()));
+        assert_eq!(unique_course_slug(&root, "Mon Parcours"), "Mon_Parcours");
+    }
+
+    #[test]
+    fn unique_course_slug_adds_a_counter_on_collision() {
+        let root = std::env::temp_dir().join(format!("divotty_test_slug_collide_{}", std::process::id()));
+        std::fs::create_dir_all(root.join("le_ravin")).unwrap();
+        assert_eq!(unique_course_slug(&root, "le_ravin"), "le_ravin_2");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn unique_course_hole_filename_keeps_a_free_name_untouched() {
+        let root = std::env::temp_dir().join(format!("divotty_test_hole_slug_free_{}", std::process::id()));
+        assert_eq!(unique_course_hole_filename(&[], &root, "hole_01.course"), "hole_01.course");
+    }
+
+    #[test]
+    fn unique_course_hole_filename_avoids_collision_with_the_in_memory_list() {
+        let root = std::env::temp_dir().join(format!("divotty_test_hole_slug_mem_{}", std::process::id()));
+        let existing = vec!["hole_01.course".to_string()];
+        assert_eq!(
+            unique_course_hole_filename(&existing, &root, "hole_01.course"),
+            "hole_01_2.course"
+        );
+    }
+
+    #[test]
+    fn unique_course_hole_filename_avoids_collision_with_a_real_file_on_disk() {
+        let root =
+            std::env::temp_dir().join(format!("divotty_test_hole_slug_disk_{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("hole_01.course"), "x").unwrap();
+        assert_eq!(unique_course_hole_filename(&[], &root, "hole_01.course"), "hole_01_2.course");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    fn test_course_builder(holes: usize) -> CourseBuilderState {
+        let dir = std::env::temp_dir().join(format!(
+            "divotty_test_course_builder_{}_{}",
+            std::process::id(),
+            holes
+        ));
+        let mut state = CourseBuilderState::new(dir, "Test".to_string(), 2, Lang::En);
+        for i in 0..holes {
+            state.holes.push(CourseHoleEntry {
+                filename: format!("hole_{i}.course"),
+                pending_source: None,
+            });
+        }
+        state
+    }
+
+    #[test]
+    fn add_hole_selects_the_newly_added_entry() {
+        let mut state = test_course_builder(2);
+        state.selected = 0;
+        state.add_hole(PathBuf::from("courses/_library/new_hole.course"));
+        assert_eq!(state.holes.len(), 3);
+        assert_eq!(state.selected, 2);
+        assert_eq!(state.holes[2].filename, "new_hole.course");
+        assert!(state.holes[2].pending_source.is_some());
+    }
+
+    #[test]
+    fn remove_selected_only_drops_it_from_the_list() {
+        let mut state = test_course_builder(3);
+        state.selected = 1;
+        state.remove_selected();
+        assert_eq!(state.holes.len(), 2);
+        assert_eq!(state.holes[0].filename, "hole_0.course");
+        assert_eq!(state.holes[1].filename, "hole_2.course");
+    }
+
+    #[test]
+    fn remove_selected_clamps_selection_after_removing_the_last_entry() {
+        let mut state = test_course_builder(2);
+        state.selected = 1;
+        state.remove_selected();
+        assert_eq!(state.holes.len(), 1);
+        assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn move_selected_up_and_down_swap_neighbors_and_track_the_selection() {
+        let mut state = test_course_builder(3);
+        state.selected = 1;
+
+        state.move_selected_up();
+        assert_eq!(state.selected, 0);
+        assert_eq!(state.holes[0].filename, "hole_1.course");
+        assert_eq!(state.holes[1].filename, "hole_0.course");
+
+        state.move_selected_down();
+        assert_eq!(state.selected, 1);
+        assert_eq!(state.holes[0].filename, "hole_0.course");
+        assert_eq!(state.holes[1].filename, "hole_1.course");
+    }
+
+    #[test]
+    fn move_selected_up_at_the_top_and_down_at_the_bottom_are_no_ops() {
+        let mut state = test_course_builder(2);
+        state.selected = 0;
+        state.move_selected_up();
+        assert_eq!(state.selected, 0);
+        assert_eq!(state.holes[0].filename, "hole_0.course");
+
+        state.selected = 1;
+        state.move_selected_down();
+        assert_eq!(state.selected, 1);
+        assert_eq!(state.holes[1].filename, "hole_1.course");
+    }
+
+    #[test]
+    fn save_refuses_an_empty_hole_list() {
+        let mut state = test_course_builder(0);
+        assert!(state.save().is_err());
+    }
+
+    #[test]
+    fn save_writes_course_yaml_and_copies_pending_holes() {
+        let dir = std::env::temp_dir().join(format!("divotty_test_course_save_{}", std::process::id()));
+        let source_dir = std::env::temp_dir()
+            .join(format!("divotty_test_course_save_source_{}", std::process::id()));
+        std::fs::create_dir_all(&source_dir).unwrap();
+        let source_hole = source_dir.join("hole_01.course");
+        std::fs::write(&source_hole, "not a real hole, just bytes to copy").unwrap();
+
+        let mut state = CourseBuilderState::new(dir.clone(), "Mon parcours".to_string(), 3, Lang::En);
+        state.add_hole(source_hole);
+
+        state.save().expect("la sauvegarde doit réussir");
+
+        assert!(dir.join("course.yaml").exists());
+        assert!(dir.join("hole_01.course").exists());
+        assert!(
+            state.holes[0].pending_source.is_none(),
+            "une fois sauvegardé, le trou n'est plus en attente de copie"
+        );
+
+        let index = CourseIndex::load_from_dir(&dir).expect("la relecture doit réussir");
+        assert_eq!(index.name, "Mon parcours");
+        assert_eq!(index.difficulty, 3);
+        assert_eq!(index.holes, vec!["hole_01.course".to_string()]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&source_dir).unwrap();
     }
 }

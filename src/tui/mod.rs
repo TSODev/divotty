@@ -9,6 +9,7 @@
 //! - `format`  : petits helpers d'affichage partagés (étoiles de difficulté...)
 
 pub mod builder;
+pub mod course_builder;
 pub mod format;
 pub mod lang;
 pub mod menu;
@@ -19,6 +20,10 @@ pub mod sidebar;
 pub use builder::{
     BuilderMode, BuilderOrientation, BuilderSetupView, BuilderSidebarView, BuilderView,
     HolePickerView, HolePreviewView,
+};
+pub use course_builder::{
+    CourseBuilderMode, CourseBuilderSidebarView, CoursePickerView, CourseSetupView,
+    HoleAddPickerView,
 };
 pub use lang::Lang;
 pub use menu::CourseMenuState;
