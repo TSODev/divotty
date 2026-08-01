@@ -11,34 +11,6 @@ use ratatui::{
 };
 use std::path::{Path, PathBuf};
 
-/// Sens dans lequel la frappe directe de terrain (voir `ROADMAP.md`, builder
-/// de trous) avance automatiquement le curseur : ligne par ligne pour un
-/// trou pensé à dominante horizontale, colonne par colonne pour un trou
-/// vertical. Choisi une fois à l'en-tête, avant de commencer à dessiner.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuilderOrientation {
-    Horizontal,
-    Vertical,
-}
-
-impl BuilderOrientation {
-    pub fn toggled(self) -> Self {
-        match self {
-            BuilderOrientation::Horizontal => BuilderOrientation::Vertical,
-            BuilderOrientation::Vertical => BuilderOrientation::Horizontal,
-        }
-    }
-
-    pub fn label(self, lang: Lang) -> &'static str {
-        match (self, lang) {
-            (BuilderOrientation::Horizontal, Lang::En) => "Horizontal",
-            (BuilderOrientation::Vertical, Lang::En) => "Vertical",
-            (BuilderOrientation::Horizontal, Lang::Fr) => "Horizontal",
-            (BuilderOrientation::Vertical, Lang::Fr) => "Vertical",
-        }
-    }
-}
-
 /// Étape d'interaction courante dans l'écran d'édition : dessin normal,
 /// l'une des deux saisies de texte ponctuelles (nom du trou, nom de fichier
 /// de sauvegarde) qui bloquent temporairement la frappe de terrain le temps
@@ -111,16 +83,18 @@ pub(crate) fn wrap_text(text: &str, width: usize) -> Vec<String> {
 }
 
 /// Panneau de gauche avant de dessiner un nouveau trou : le par visé (seul
-/// champ obligatoire) et l'orientation, qui ensemble suggèrent une taille
-/// de grille cohérente avec les distances de club calibrées ailleurs dans
-/// le projet (voir `tools/make_hole_canvas.py`). Affiché à côté d'un aperçu
-/// de la grille vierge à cette taille (voir `setup_builder` dans
-/// `main.rs`, qui construit ce second panneau) — même esprit deux colonnes
-/// que le reste du builder plutôt qu'un unique panneau plein écran.
+/// champ requis) suggère une taille de grille cohérente avec les distances
+/// de club calibrées ailleurs dans le projet (voir
+/// `tools/make_hole_canvas.py`). Affiché à côté d'un aperçu de la grille
+/// vierge à cette taille (voir `setup_builder` dans `main.rs`, qui
+/// construit ce second panneau) — même esprit deux colonnes que le reste du
+/// builder plutôt qu'un unique panneau plein écran. Trous toujours
+/// horizontaux (voir `ROADMAP.md` — l'orientation verticale et la rotation
+/// ont été retirées, la verticalité n'apportait rien de plus tout en
+/// donnant des proportions dégradées après une rotation 90°).
 pub struct BuilderSetupView {
     pub lang: Lang,
     pub par: u8,
-    pub orientation: BuilderOrientation,
     pub grid_size: (usize, usize),
 }
 
@@ -141,13 +115,6 @@ impl Widget for BuilderSetupView {
             ),
             Line::styled(
                 match self.lang {
-                    Lang::En => format!("Orientation: {}", self.orientation.label(self.lang)),
-                    Lang::Fr => format!("Orientation : {}", self.orientation.label(self.lang)),
-                },
-                Style::default().fg(Color::White),
-            ),
-            Line::styled(
-                match self.lang {
                     Lang::En => format!("Grid: {w}x{h}"),
                     Lang::Fr => format!("Grille : {w}x{h}"),
                 },
@@ -158,13 +125,6 @@ impl Widget for BuilderSetupView {
                 match self.lang {
                     Lang::En => "Up/Down  change par",
                     Lang::Fr => "Haut/Bas  changer par",
-                },
-                Style::default().fg(Color::Gray),
-            ),
-            Line::styled(
-                match self.lang {
-                    Lang::En => "Left/Right  orientation",
-                    Lang::Fr => "Gauche/Droite  orientation",
                 },
                 Style::default().fg(Color::Gray),
             ),
@@ -485,9 +445,7 @@ pub struct BuilderSidebarView<'a> {
     pub lang: Lang,
     pub name: &'a str,
     pub par: u8,
-    pub orientation: BuilderOrientation,
     pub cursor: Pos,
-    pub grid_width: usize,
     pub grid_height: usize,
     pub mode: BuilderMode,
     pub text_input: &'a str,
@@ -544,19 +502,13 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                 },
                 Style::default().fg(Color::White),
             ),
-            Line::styled(
-                match self.lang {
-                    Lang::En => format!("Orientation: {}", self.orientation.label(self.lang)),
-                    Lang::Fr => format!("Orientation : {}", self.orientation.label(self.lang)),
-                },
-                Style::default().fg(Color::White),
-            ),
         ];
         panel(chunks[0], buf, hole_title, HOLE_ACCENT, hole_lines);
 
-        // Position courante + progression dans le sens de l'avancée
-        // automatique de la frappe (voir `BuilderOrientation`) : c'est
-        // cette dimension qui s'arrête net en fin de grille plutôt que de
+        // Position courante + progression ligne par ligne (l'avancée
+        // automatique de la frappe, voir `BuilderState::advance_cursor`,
+        // parcourt toujours la grille ligne par ligne) : c'est cette
+        // dimension qui s'arrête net en fin de grille plutôt que de
         // boucler, donc celle qui mérite un avertissement à l'approche de
         // la fin. x/y explicites, 0-indexés — mêmes coordonnées que la
         // grille du fichier `.course` et que les axes imprimés sur
@@ -567,23 +519,10 @@ impl<'a> Widget for BuilderSidebarView<'a> {
             Lang::En => "Position",
             Lang::Fr => "Position",
         };
-        let (progress_line, remaining) = match self.orientation {
-            BuilderOrientation::Horizontal => {
-                let remaining = self.grid_height - 1 - self.cursor.y;
-                let line = match self.lang {
-                    Lang::En => format!("Row {}/{}", self.cursor.y + 1, self.grid_height),
-                    Lang::Fr => format!("Ligne {}/{}", self.cursor.y + 1, self.grid_height),
-                };
-                (line, remaining)
-            }
-            BuilderOrientation::Vertical => {
-                let remaining = self.grid_width - 1 - self.cursor.x;
-                let line = match self.lang {
-                    Lang::En => format!("Column {}/{}", self.cursor.x + 1, self.grid_width),
-                    Lang::Fr => format!("Colonne {}/{}", self.cursor.x + 1, self.grid_width),
-                };
-                (line, remaining)
-            }
+        let remaining = self.grid_height - 1 - self.cursor.y;
+        let progress_line = match self.lang {
+            Lang::En => format!("Row {}/{}", self.cursor.y + 1, self.grid_height),
+            Lang::Fr => format!("Ligne {}/{}", self.cursor.y + 1, self.grid_height),
         };
         let progress_style = if remaining == 0 {
             bold(Color::LightRed)
@@ -724,11 +663,11 @@ impl<'a> Widget for BuilderSidebarView<'a> {
             let base: &str = match self.mode {
                 BuilderMode::Drawing => match self.lang {
                     Lang::En => {
-                        "letters  paint\n↑↓←→  move\nU  undo\nR  rotate\nC  fill\nN  rename\n\
+                        "letters  paint\n↑↓←→  move\nU  undo\nC  fill\nN  rename\n\
                          S  save\nEsc Esc  menu\nqq  quit"
                     }
                     Lang::Fr => {
-                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nR  pivoter\nC  combler\n\
+                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nC  combler\n\
                          N  renommer\nS  sauver\nÉchap Échap  menu\nqq  quitter"
                     }
                 },

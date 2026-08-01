@@ -435,17 +435,14 @@ Fait et testé :
   code hexadécimal `tmux send-keys -H`, le shell interceptant `;` et `é`
   tapés littéralement) : `;`/`f`/`é`/`w` peignent bien fairway/eau comme
   prévu.
-- Rotation à 90° de la grille en cours de dessin (`BuilderState::rotate`
-  dans `main.rs`) : touche `R` en mode dessin, largeur/hauteur s'échangent
-  et le contenu déjà peint pivote avec (sens horaire, coin haut-gauche →
-  haut-droite → bas-droite → bas-gauche → haut-gauche), plutôt qu'une
-  simple réinterprétation des dimensions qui n'aurait aucun sens
-  visuellement. L'orientation (`BuilderOrientation`, sens d'avancée
-  automatique de la frappe) bascule avec les dimensions. Curseur et pile
-  d'annulation sont remis à zéro après une rotation plutôt que remappés —
-  ils ne correspondraient plus à rien de cohérent, et remapper resterait
-  complexe pour un gain marginal. Vérifié en tmux (motif distinct dessiné
-  en haut à gauche, tourne bien en colonne verticale après `R`).
+- Rotation à 90° et orientation verticale du builder **retirées** (voir
+  `ROADMAP.md` pour le détail) : implémentées et vérifiées, puis
+  supprimées après signalement — un swap fidèle largeur/hauteur ne produit
+  jamais un trou vertical "utile", juste la même forme tournée sur le
+  côté, avec un rendu très étroit/haut une fois affiché (glyphes
+  monospace plus hauts que larges). Les trous du builder sont désormais
+  toujours horizontaux, `BuilderOrientation` n'existe plus,
+  `suggested_declared_size` ne prend plus qu'un `par`.
 - Comblement en masse du hors-limites (`BuilderState::fill_out_of_bounds`
   dans `main.rs`) : touche `C` en mode dessin, bascule vers un mode
   d'attente (`BuilderMode::FillingBackground`, panneau Contrôles affiche
@@ -530,8 +527,8 @@ Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 73 tests unitaires dans
-  `src/main.rs` (140 au total avec `core` et `tui`), mais rien qui simule un
+  `adjust_die_strength`...) a maintenant 67 tests unitaires dans
+  `src/main.rs` (134 au total avec `core` et `tui`), mais rien qui simule un
   vrai terminal/`crossterm`.
 
 ## Publication crates.io

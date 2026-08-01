@@ -379,16 +379,27 @@
       d'origine). Reste hors scope v1 (phase 10) : estimation de distance
       pendant l'édition et ajout/retrait d'un trou dans `course.yaml`.
 
-      **Ajout post-v1** : rotation de la grille à 90° (`BuilderState::rotate`
-      dans `main.rs`, touche `R` en mode dessin) — largeur/hauteur
-      s'échangent et le contenu déjà dessiné pivote avec (sens horaire,
-      `(x, y) → (H-1-y, x)`), plutôt qu'une simple réinterprétation des
-      dimensions qui n'aurait aucun sens visuellement. L'orientation
-      bascule avec les dimensions ; curseur et pile d'annulation sont
-      remis à zéro (ne correspondent plus à rien de cohérent après une
-      rotation) plutôt que remappés, pour rester simple. Testé (rotation
-      simple vérifiée case par case, 4 rotations reviennent à la grille de
-      départ) et vérifié en tmux.
+      **Ajout post-v1 puis retiré** : rotation de la grille à 90°
+      (`BuilderState::rotate`, touche `R` en mode dessin) et orientation
+      verticale du builder (`BuilderOrientation::Vertical`, choisie à
+      l'en-tête avant de dessiner). Implémentée, testée et vérifiée en
+      tmux dans un premier temps, puis retirée après signalement : une
+      rotation à 90° swap fidèlement largeur/hauteur (`72x40` devient
+      `40x72`) — correct mathématiquement, mais ça ne produit jamais un
+      trou vertical "utile" pour autant, puisque c'est toujours la même
+      forme, juste tournée sur le côté, avec un rendu très étroit et haut
+      une fois dans un terminal (glyphes monospace nettement plus hauts
+      que larges — déjà la raison pour laquelle `COURSE_WIDTH`/
+      `COURSE_HEIGHT`, 100x60, ne suivent pas un ratio 2:1 strict). Plutôt
+      que de corriger le ratio de `suggested_declared_size` pour
+      l'orientation verticale (aurait aidé un futur trou vertical dessiné
+      depuis zéro, mais pas la rotation elle-même — un swap fidèle ne peut
+      pas à la fois préserver le dessin existant et matcher un ratio
+      différent sans le déformer), décision prise de simplifier : les
+      trous du builder sont désormais **toujours horizontaux**, la
+      verticalité n'apportant rien de plus. `BuilderOrientation` retiré du
+      code, `suggested_declared_size` ne prend plus qu'un `par`. Cohérent
+      avec le principe "simplicité" du projet (voir `CLAUDE.md`).
 
       **Ajout post-v1** : comblement en masse du hors-limites
       (`BuilderState::fill_out_of_bounds` dans `main.rs`, touche `C` en

@@ -18,8 +18,8 @@ pub mod scorecard;
 pub mod sidebar;
 
 pub use builder::{
-    BuilderMode, BuilderOrientation, BuilderSetupView, BuilderSidebarView, BuilderView,
-    HolePickerView, HolePreviewView,
+    BuilderMode, BuilderSetupView, BuilderSidebarView, BuilderView, HolePickerView,
+    HolePreviewView,
 };
 pub use course_builder::{
     CourseBuilderMode, CourseBuilderSidebarView, CoursePickerView, CourseSetupView,

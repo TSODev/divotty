@@ -12,10 +12,10 @@ use crate::core::{
     HoleScore, Pos, Scorecard, Shot, ShotResult, TerrainKind, Wind, COURSE_HEIGHT, COURSE_WIDTH,
 };
 use crate::tui::{
-    BuilderMode, BuilderOrientation, BuilderSetupView, BuilderSidebarView, BuilderView,
-    CourseBuilderMode, CourseBuilderSidebarView, CourseMenuState, CoursePickerView, CourseSetupView,
-    CourseView, HoleAddPickerView, HolePickerView, HolePreviewView, Lang, ScorecardView,
-    SidebarState, Viewport, ZoomLevel,
+    BuilderMode, BuilderSetupView, BuilderSidebarView, BuilderView, CourseBuilderMode,
+    CourseBuilderSidebarView, CourseMenuState, CoursePickerView, CourseSetupView, CourseView,
+    HoleAddPickerView, HolePickerView, HolePreviewView, Lang, ScorecardView, SidebarState,
+    Viewport, ZoomLevel,
 };
 use directories::ProjectDirs;
 use rand::Rng;
@@ -1002,19 +1002,18 @@ fn sanitize_hole_filename(input: &str) -> String {
 /// distances déjà utilisées par `tools/make_hole_canvas.py` (rayons idéaux
 /// tee-green par par) : un par court n'a pas besoin d'un canevas 100x60
 /// entièrement hors-limites autour d'un tout petit trou. Le "petit côté"
-/// est dérivé proportionnellement du "grand côté" (rapport 3/5, celui du
-/// canevas complet 100x60 — `COURSE_HEIGHT`/`COURSE_WIDTH`) plutôt que
-/// d'être une constante fixe indépendante du par. Le canevas n'étant pas
-/// carré (100x60), le plafond du "grand côté" dépend de l'orientation
-/// (100 en horizontal, seulement 60 en vertical) : il est donc clampé
-/// *avant* d'en dériver le petit côté, pas après — sinon un par 7+ en
-/// vertical donnerait un carré 60x60 (grand côté rabattu de 100 à 60, puis
-/// petit côté calculé sur l'ancienne valeur 100 non clampée) plutôt qu'un
-/// couloir 36x60 correctement proportionné. Avec ce clampage dans le bon
-/// ordre, un par 7+ en horizontal atteint exactement le canevas 100x60
-/// plein (aucune taille déclarée n'est alors plus restrictive que le
-/// comportement par défaut).
-fn suggested_declared_size(par: u8, orientation: BuilderOrientation) -> (usize, usize) {
+/// (hauteur) est dérivé proportionnellement du "grand côté" (largeur,
+/// rapport 3/5, celui du canevas complet 100x60 —
+/// `COURSE_HEIGHT`/`COURSE_WIDTH`) plutôt que d'être une constante fixe
+/// indépendante du par. Toujours horizontal (largeur ≥ hauteur) : voir
+/// `ROADMAP.md` — l'orientation verticale et la rotation à 90° ont été
+/// retirées, la verticalité n'apportait rien de plus tout en donnant des
+/// proportions dégradées une fois tournée (le petit côté d'un trou
+/// horizontal, pensé pour des colonnes de terminal, devient beaucoup trop
+/// étroit une fois passé en hauteur de lignes). Avec ce clampage, un par 7+
+/// atteint exactement le canevas 100x60 plein (aucune taille déclarée
+/// n'est alors plus restrictive que le comportement par défaut).
+fn suggested_declared_size(par: u8) -> (usize, usize) {
     let raw_long_side = match par {
         0..=MIN_HOLE_PAR => 25,
         4 => 55,
@@ -1022,16 +1021,9 @@ fn suggested_declared_size(par: u8, orientation: BuilderOrientation) -> (usize, 
         6 => 85,
         _ => 100,
     };
-    let (long_max, short_max) = match orientation {
-        BuilderOrientation::Horizontal => (COURSE_WIDTH, COURSE_HEIGHT),
-        BuilderOrientation::Vertical => (COURSE_HEIGHT, COURSE_WIDTH),
-    };
-    let long_side = raw_long_side.min(long_max);
-    let short_side = (long_side * 3 / 5).min(short_max);
-    match orientation {
-        BuilderOrientation::Horizontal => (long_side, short_side),
-        BuilderOrientation::Vertical => (short_side, long_side),
-    }
+    let long_side = raw_long_side.min(COURSE_WIDTH);
+    let short_side = (long_side * 3 / 5).min(COURSE_HEIGHT);
+    (long_side, short_side)
 }
 
 /// Une entrée de la pile d'annulation (`BuilderState::undo_stack`) : soit
@@ -1068,7 +1060,6 @@ enum PendingFileOp {
 struct BuilderState {
     name: String,
     par: u8,
-    orientation: BuilderOrientation,
     width: usize,
     height: usize,
     tiles: Vec<Vec<TerrainKind>>,
@@ -1102,8 +1093,8 @@ struct BuilderState {
 }
 
 impl BuilderState {
-    fn new(par: u8, orientation: BuilderOrientation, lang: Lang) -> Self {
-        let (width, height) = suggested_declared_size(par, orientation);
+    fn new(par: u8, lang: Lang) -> Self {
+        let (width, height) = suggested_declared_size(par);
         // Volontairement vide plutôt qu'un nom générique ("New hole") : un
         // nom de trou laissé vide est justement le signal que le nom du
         // fichier de sauvegarde doit être transféré dedans (voir la saisie
@@ -1113,7 +1104,6 @@ impl BuilderState {
         BuilderState {
             name,
             par,
-            orientation,
             width,
             height,
             tiles: vec![vec![TerrainKind::OutOfBounds; width]; height],
@@ -1136,21 +1126,12 @@ impl BuilderState {
     /// fichier existant". `source_path` fixe le comportement de `S` :
     /// `Some` réécrit directement ce fichier ("Modifier"), `None` redemande
     /// un nom à chaque sauvegarde comme un trou neuf ("Dupliquer").
-    /// L'orientation est déduite du rapport largeur/hauteur de la grille
-    /// chargée (déterminante seulement pour le sens d'avancée automatique
-    /// de la frappe — la taille elle-même reste celle du fichier).
     fn from_existing_hole(hole: &Hole, source_path: Option<PathBuf>, lang: Lang) -> Self {
         let width = hole.meta.width.unwrap_or(COURSE_WIDTH);
         let height = hole.meta.height.unwrap_or(COURSE_HEIGHT);
-        let orientation = if width >= height {
-            BuilderOrientation::Horizontal
-        } else {
-            BuilderOrientation::Vertical
-        };
         BuilderState {
             name: hole.meta.name.clone(),
             par: hole.meta.par,
-            orientation,
             width,
             height,
             tiles: hole.local_tiles(),
@@ -1169,10 +1150,9 @@ impl BuilderState {
     }
 
     /// Peint la case sous le curseur avec `terrain` (empile l'ancienne
-    /// valeur pour l'annulation) puis avance le curseur d'un cran dans le
-    /// sens de `orientation` — ligne par ligne en horizontal, colonne par
-    /// colonne en vertical, comme du texte avec retour à la ligne. S'arrête
-    /// net à la dernière case plutôt que de boucler au début.
+    /// valeur pour l'annulation) puis avance le curseur d'un cran, ligne
+    /// par ligne, comme du texte avec retour à la ligne. S'arrête net à la
+    /// dernière case plutôt que de boucler au début.
     fn type_terrain(&mut self, terrain: TerrainKind) {
         let old = self.tiles[self.cursor.y][self.cursor.x];
         self.undo_stack.push(UndoEntry::Cell(self.cursor, old));
@@ -1211,23 +1191,11 @@ impl BuilderState {
     }
 
     fn advance_cursor(&mut self) {
-        match self.orientation {
-            BuilderOrientation::Horizontal => {
-                if self.cursor.x + 1 < self.width {
-                    self.cursor.x += 1;
-                } else if self.cursor.y + 1 < self.height {
-                    self.cursor.y += 1;
-                    self.cursor.x = 0;
-                }
-            }
-            BuilderOrientation::Vertical => {
-                if self.cursor.y + 1 < self.height {
-                    self.cursor.y += 1;
-                } else if self.cursor.x + 1 < self.width {
-                    self.cursor.x += 1;
-                    self.cursor.y = 0;
-                }
-            }
+        if self.cursor.x + 1 < self.width {
+            self.cursor.x += 1;
+        } else if self.cursor.y + 1 < self.height {
+            self.cursor.y += 1;
+            self.cursor.x = 0;
         }
     }
 
@@ -1252,35 +1220,6 @@ impl BuilderState {
             }
             None => {}
         }
-    }
-
-    /// Fait pivoter la grille dessinée à 90° (sens horaire) : largeur et
-    /// hauteur s'échangent, et le contenu suit la rotation plutôt que
-    /// d'être simplement réinterprété avec de nouvelles dimensions (ce qui
-    /// n'aurait aucun sens visuellement — le tee/le trou/les obstacles
-    /// doivent rester à la même place relative, comme si on tournait une
-    /// feuille de papier). `(x, y)` devient `(H-1-y, x)`, où `H` est
-    /// l'ancienne hauteur — coin haut-gauche → haut-droite, haut-droite →
-    /// bas-droite, etc. L'orientation bascule avec les dimensions (un trou
-    /// pensé à dominante horizontale devient vertical après rotation, et
-    /// inversement). Le curseur et la pile d'annulation ne correspondent
-    /// plus à rien de cohérent une fois pivoté — remis à zéro plutôt que
-    /// remappés à travers la rotation, pour rester simple.
-    fn rotate(&mut self) {
-        let old_width = self.width;
-        let old_height = self.height;
-        let mut new_tiles = vec![vec![TerrainKind::OutOfBounds; old_height]; old_width];
-        for (y, row) in self.tiles.iter().enumerate() {
-            for (x, terrain) in row.iter().enumerate() {
-                new_tiles[x][old_height - 1 - y] = *terrain;
-            }
-        }
-        self.width = old_height;
-        self.height = old_width;
-        self.tiles = new_tiles;
-        self.orientation = self.orientation.toggled();
-        self.cursor = Pos { x: 0, y: 0 };
-        self.undo_stack.clear();
     }
 
     fn move_cursor(&mut self, dx: i32, dy: i32) {
@@ -1459,10 +1398,9 @@ fn setup_builder<B: ratatui::backend::Backend>(
     lang: &mut Lang,
 ) -> Result<Option<BuilderState>> {
     let mut par: u8 = 4;
-    let mut orientation = BuilderOrientation::Horizontal;
 
     loop {
-        let grid_size = suggested_declared_size(par, orientation);
+        let grid_size = suggested_declared_size(par);
         // Aperçu de la grille vierge à la taille suggérée, dans le même
         // esprit "liste/formulaire à gauche, aperçu visuel à droite" que
         // le reste du builder plutôt qu'un unique panneau plein écran.
@@ -1475,10 +1413,7 @@ fn setup_builder<B: ratatui::backend::Backend>(
                 .constraints([Constraint::Length(30), Constraint::Min(0)])
                 .split(frame.size());
 
-            frame.render_widget(
-                BuilderSetupView { lang: *lang, par, orientation, grid_size },
-                columns[0],
-            );
+            frame.render_widget(BuilderSetupView { lang: *lang, par, grid_size }, columns[0]);
 
             frame.render_widget(
                 BuilderView {
@@ -1495,10 +1430,9 @@ fn setup_builder<B: ratatui::backend::Backend>(
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Esc => return Ok(None),
-                    KeyCode::Enter => return Ok(Some(BuilderState::new(par, orientation, *lang))),
+                    KeyCode::Enter => return Ok(Some(BuilderState::new(par, *lang))),
                     KeyCode::Up => par = (par + 1).min(9),
                     KeyCode::Down => par = par.saturating_sub(1).max(MIN_HOLE_PAR),
-                    KeyCode::Left | KeyCode::Right => orientation = orientation.toggled(),
                     KeyCode::Char('l') | KeyCode::Char('L') => *lang = lang.next(),
                     _ => {}
                 }
@@ -1528,9 +1462,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                     lang: state.lang,
                     name: &state.name,
                     par: state.par,
-                    orientation: state.orientation,
                     cursor: state.cursor,
-                    grid_width: state.width,
                     grid_height: state.height,
                     mode: state.mode,
                     text_input: &state.text_input,
@@ -1584,7 +1516,6 @@ fn run_builder<B: ratatui::backend::Backend>(
                             KeyCode::Left => state.move_cursor(-1, 0),
                             KeyCode::Right => state.move_cursor(1, 0),
                             KeyCode::Char('u') | KeyCode::Char('U') => state.undo(),
-                            KeyCode::Char('r') | KeyCode::Char('R') => state.rotate(),
                             KeyCode::Char('c') | KeyCode::Char('C') => {
                                 state.mode = BuilderMode::FillingBackground;
                             }
@@ -2875,64 +2806,36 @@ mod tests {
     }
 
     #[test]
-    fn suggested_declared_size_swaps_sides_with_orientation() {
-        // Par 4 (long côté 55) tient sans être écrêté dans les deux sens
-        // (largeur max 100, hauteur max 60) — un bon cas pour vérifier que
-        // l'orientation échange proprement largeur/hauteur.
-        let (hw, hh) = suggested_declared_size(4, BuilderOrientation::Horizontal);
-        let (vw, vh) = suggested_declared_size(4, BuilderOrientation::Vertical);
-        assert_eq!((hw, hh), (vh, vw));
-    }
-
-    #[test]
     fn suggested_declared_size_never_exceeds_the_full_canvas() {
         for par in 0..=9u8 {
-            for orientation in [BuilderOrientation::Horizontal, BuilderOrientation::Vertical] {
-                let (w, h) = suggested_declared_size(par, orientation);
-                assert!(w <= COURSE_WIDTH && h <= COURSE_HEIGHT);
-            }
+            let (w, h) = suggested_declared_size(par);
+            assert!(w <= COURSE_WIDTH && h <= COURSE_HEIGHT);
         }
     }
 
     #[test]
-    fn suggested_declared_size_reaches_the_full_canvas_at_par_7_horizontal() {
+    fn suggested_declared_size_reaches_the_full_canvas_at_par_7() {
         // Le petit côté est dérivé proportionnellement du grand côté (voir
-        // `suggested_declared_size`) : à par 7+ en horizontal, le grand
-        // côté sature à 100 (COURSE_WIDTH), donc le petit côté doit saturer
-        // à 60 (COURSE_HEIGHT) — pas rester bloqué à une constante fixe
+        // `suggested_declared_size`) : à par 7+, le grand côté sature à 100
+        // (COURSE_WIDTH), donc le petit côté doit saturer à 60
+        // (COURSE_HEIGHT) — pas rester bloqué à une constante fixe
         // indépendante du par (bug corrigé après un signalement : le petit
         // côté restait toujours 30, quel que soit le par choisi).
-        assert_eq!(
-            suggested_declared_size(7, BuilderOrientation::Horizontal),
-            (COURSE_WIDTH, COURSE_HEIGHT)
-        );
-    }
-
-    #[test]
-    fn suggested_declared_size_caps_the_long_side_before_scaling_when_vertical() {
-        // Le canevas n'est pas carré (100x60) : en vertical, le grand côté
-        // ne peut jamais dépasser 60 (COURSE_HEIGHT), même à par 7+ où le
-        // grand côté "brut" viserait 100. Il doit être clampé à 60 *avant*
-        // d'en dériver le petit côté (36 = 60*3/5), pas après (ce qui
-        // donnerait à tort un carré 60x60).
-        assert_eq!(
-            suggested_declared_size(7, BuilderOrientation::Vertical),
-            (36, COURSE_HEIGHT)
-        );
+        assert_eq!(suggested_declared_size(7), (COURSE_WIDTH, COURSE_HEIGHT));
     }
 
     #[test]
     fn suggested_declared_size_shrinks_both_sides_together_for_shorter_pars() {
         // Les deux côtés doivent grandir ensemble avec le par, pas
         // seulement le grand côté.
-        let (w3, h3) = suggested_declared_size(3, BuilderOrientation::Horizontal);
-        let (w5, h5) = suggested_declared_size(5, BuilderOrientation::Horizontal);
+        let (w3, h3) = suggested_declared_size(3);
+        let (w5, h5) = suggested_declared_size(5);
         assert!(w3 < w5 && h3 < h5);
     }
 
     #[test]
-    fn typing_terrain_paints_and_advances_horizontally_then_wraps() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+    fn typing_terrain_paints_and_advances_then_wraps_to_the_next_row() {
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 3;
         builder.height = 2;
         builder.tiles = vec![vec![TerrainKind::OutOfBounds; 3]; 2];
@@ -2947,7 +2850,7 @@ mod tests {
 
     #[test]
     fn typing_terrain_stops_at_the_last_cell_instead_of_wrapping_around() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 2;
         builder.height = 1;
         builder.tiles = vec![vec![TerrainKind::OutOfBounds; 2]; 1];
@@ -2958,21 +2861,8 @@ mod tests {
     }
 
     #[test]
-    fn typing_terrain_advances_vertically_then_wraps_to_the_next_column() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Vertical, Lang::En);
-        builder.width = 2;
-        builder.height = 2;
-        builder.tiles = vec![vec![TerrainKind::OutOfBounds; 2]; 2];
-        builder.cursor = Pos { x: 0, y: 1 };
-
-        builder.type_terrain(TerrainKind::Water);
-        assert_eq!(builder.tiles[1][0], TerrainKind::Water);
-        assert_eq!(builder.cursor, Pos { x: 1, y: 0 });
-    }
-
-    #[test]
     fn undo_restores_the_previous_terrain_and_moves_the_cursor_back() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 3;
         builder.height = 1;
         builder.tiles = vec![vec![TerrainKind::Rough; 3]];
@@ -2988,74 +2878,8 @@ mod tests {
     }
 
     #[test]
-    fn rotate_swaps_dimensions_and_turns_the_content_clockwise() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
-        builder.width = 3;
-        builder.height = 2;
-        // Un coin distinct par case pour vérifier sans ambiguïté où chacune
-        // atterrit après la rotation.
-        builder.tiles = vec![
-            vec![TerrainKind::Tee, TerrainKind::Fairway, TerrainKind::Hole],
-            vec![TerrainKind::Bunker, TerrainKind::Rough, TerrainKind::Water],
-        ];
-
-        builder.rotate();
-
-        assert_eq!(builder.width, 2, "l'ancienne hauteur devient la largeur");
-        assert_eq!(builder.height, 3, "l'ancienne largeur devient la hauteur");
-        // Sens horaire : haut-gauche → haut-droite, haut-droite → bas-droite,
-        // bas-droite → bas-gauche, bas-gauche → haut-gauche.
-        assert_eq!(
-            builder.tiles,
-            vec![
-                vec![TerrainKind::Bunker, TerrainKind::Tee],
-                vec![TerrainKind::Rough, TerrainKind::Fairway],
-                vec![TerrainKind::Water, TerrainKind::Hole],
-            ]
-        );
-    }
-
-    #[test]
-    fn rotate_toggles_orientation_and_resets_cursor_and_undo() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
-        builder.width = 3;
-        builder.height = 2;
-        builder.tiles = vec![vec![TerrainKind::Fairway; 3]; 2];
-        builder.cursor = Pos { x: 2, y: 1 };
-        builder.type_terrain(TerrainKind::Bunker); // pousse une entrée d'annulation
-        assert!(!builder.undo_stack.is_empty());
-
-        builder.rotate();
-
-        assert_eq!(builder.orientation, BuilderOrientation::Vertical);
-        assert_eq!(builder.cursor, Pos { x: 0, y: 0 });
-        assert!(builder.undo_stack.is_empty(), "l'historique d'annulation ne survit pas à une rotation");
-    }
-
-    #[test]
-    fn rotating_four_times_returns_to_the_original_grid() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
-        builder.width = 3;
-        builder.height = 2;
-        let original = vec![
-            vec![TerrainKind::Tee, TerrainKind::Fairway, TerrainKind::Hole],
-            vec![TerrainKind::Bunker, TerrainKind::Rough, TerrainKind::Water],
-        ];
-        builder.tiles = original.clone();
-
-        for _ in 0..4 {
-            builder.rotate();
-        }
-
-        assert_eq!(builder.width, 3);
-        assert_eq!(builder.height, 2);
-        assert_eq!(builder.tiles, original);
-        assert_eq!(builder.orientation, BuilderOrientation::Horizontal);
-    }
-
-    #[test]
     fn fill_out_of_bounds_only_replaces_cells_still_out_of_bounds() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 3;
         builder.height = 2;
         builder.tiles = vec![
@@ -3078,7 +2902,7 @@ mod tests {
 
     #[test]
     fn fill_out_of_bounds_with_out_of_bounds_itself_is_a_no_op() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 2;
         builder.height = 2;
         builder.tiles = vec![vec![TerrainKind::OutOfBounds; 2]; 2];
@@ -3091,7 +2915,7 @@ mod tests {
 
     #[test]
     fn fill_out_of_bounds_does_not_record_undo_when_nothing_changes() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 2;
         builder.height = 1;
         builder.tiles = vec![vec![TerrainKind::Fairway, TerrainKind::Bunker]];
@@ -3104,7 +2928,7 @@ mod tests {
 
     #[test]
     fn undo_reverts_a_whole_fill_in_a_single_call() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 3;
         builder.height = 2;
         builder.tiles = vec![vec![TerrainKind::OutOfBounds; 3]; 2];
@@ -3122,7 +2946,7 @@ mod tests {
 
     #[test]
     fn undo_after_a_fill_does_not_touch_cells_painted_before_it() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 2;
         builder.height = 1;
         builder.tiles = vec![vec![TerrainKind::Tee, TerrainKind::OutOfBounds]];
@@ -3141,7 +2965,7 @@ mod tests {
 
     #[test]
     fn move_cursor_is_clamped_to_the_grid_bounds() {
-        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(4, Lang::En);
         builder.width = 3;
         builder.height = 3;
         builder.tiles = vec![vec![TerrainKind::OutOfBounds; 3]; 3];
@@ -3157,7 +2981,7 @@ mod tests {
 
     #[test]
     fn to_course_raw_produces_a_file_that_hole_parse_accepts() {
-        let mut builder = BuilderState::new(3, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(3, Lang::En);
         builder.width = 5;
         builder.height = 3;
         builder.tiles = vec![vec![TerrainKind::Fairway; 5]; 3];
@@ -3171,7 +2995,7 @@ mod tests {
     }
 
     fn small_valid_builder() -> BuilderState {
-        let mut builder = BuilderState::new(3, BuilderOrientation::Horizontal, Lang::En);
+        let mut builder = BuilderState::new(3, Lang::En);
         builder.width = 5;
         builder.height = 3;
         builder.tiles = vec![vec![TerrainKind::Fairway; 5]; 3];
@@ -3298,8 +3122,8 @@ mod tests {
     }
 
     #[test]
-    fn from_existing_hole_preserves_meta_and_infers_orientation() {
-        let raw = small_hole_raw(20, 10); // largeur > hauteur : horizontal
+    fn from_existing_hole_preserves_meta_and_dimensions() {
+        let raw = small_hole_raw(20, 10);
         let hole = Hole::parse(&raw).expect("le petit trou doit parser");
 
         let builder = BuilderState::from_existing_hole(&hole, None, Lang::En);
@@ -3307,19 +3131,22 @@ mod tests {
         assert_eq!(builder.par, hole.meta.par);
         assert_eq!(builder.width, 20);
         assert_eq!(builder.height, 10);
-        assert_eq!(builder.orientation, BuilderOrientation::Horizontal);
         assert_eq!(builder.tiles, hole.local_tiles());
         assert_eq!(builder.source_path, None);
     }
 
     #[test]
-    fn from_existing_hole_infers_vertical_orientation_and_keeps_source_path() {
-        let raw = small_hole_raw(10, 20); // hauteur > largeur : vertical
+    fn from_existing_hole_keeps_source_path_regardless_of_grid_shape() {
+        // Un trou plus haut que large charge sans souci — l'orientation
+        // n'est plus une notion du builder (voir `ROADMAP.md`), seule la
+        // taille déclarée dans le fichier compte.
+        let raw = small_hole_raw(10, 20);
         let hole = Hole::parse(&raw).expect("le petit trou doit parser");
         let path = PathBuf::from("courses/demo/hole_01.course");
 
         let builder = BuilderState::from_existing_hole(&hole, Some(path.clone()), Lang::Fr);
-        assert_eq!(builder.orientation, BuilderOrientation::Vertical);
+        assert_eq!(builder.width, 10);
+        assert_eq!(builder.height, 20);
         assert_eq!(builder.source_path, Some(path));
     }
 

@@ -36,12 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   even partway through detailing a hole — handy since a fresh grid can be
   well over a thousand cells to paint by hand otherwise. Undoing (`U`)
   reverts the whole fill in one press rather than one cell at a time.
-- The hole builder can now rotate the grid 90° with `R`: width and height
-  swap and whatever you've already drawn turns with them, instead of just
-  reinterpreting the same data with new dimensions. Handy for switching a
-  hole between a horizontal and a vertical layout partway through drawing
-  it without starting over. The cursor and undo history reset on rotate,
-  since neither would still line up with anything afterward.
 - A course builder to assemble existing holes into a playable course:
   press `P` from the course menu, choose "+ New course" (name + difficulty)
   or an existing course to keep editing, then build the ordered hole list
@@ -73,9 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no more forcing every short hole to fill 100x60 by hand. Existing files
   that don't declare a size are completely unaffected.
 - A first version of the in-game hole builder: press `E` from the course
-  menu, pick a par and an orientation (a suggested grid size follows,
-  scaled proportionally so a par 7+ hole gets the full 100x60 canvas), then
-  draw the hole entirely from the keyboard — typing a terrain character
+  menu, pick a par (a suggested grid size follows, scaled proportionally
+  so a par 7+ hole gets the full 100x60 canvas), then draw the hole
+  entirely from the keyboard — typing a terrain character
   (`.`/`=`/`B`/`~`/`T`/`G`/`X`/`D`/`H`, either letter case) paints the
   current cell and auto-advances to the next one, arrows move freely, `U`
   undoes the last cell, `N` renames, `S` saves. The header bar shows the
@@ -106,8 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   list. Every builder screen now shares the same layout as the game
   itself: the drawing screen has a stacked left sidebar (Hole, Position,
   Legend, Controls) with the map filling the right side instead of one
-  wide banner above the grid, and the par/orientation setup screen shows a
-  live preview of the blank grid at its suggested size next to the form.
+  wide banner above the grid, and the par setup screen shows a live
+  preview of the blank grid at its suggested size next to the form.
   The hole's name and its save file name are now linked: naming the hole
   first (`N`) pre-fills the save prompt, and saving an unnamed hole feeds
   the typed file name back in as its name, so a `.course` file never ends
