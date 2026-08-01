@@ -935,6 +935,18 @@ fn suggested_declared_size(par: u8, orientation: BuilderOrientation) -> (usize, 
     }
 }
 
+/// Une entrée de la pile d'annulation (`BuilderState::undo_stack`) : soit
+/// une case peinte au clavier (`type_terrain`), soit tout un comblement de
+/// hors-limites (`fill_out_of_bounds`) — annulé en un seul `U` plutôt que
+/// case par case, ce qui serait impraticable pour une grille entière. Un
+/// `Fill` n'a besoin de mémoriser que les positions touchées, jamais leur
+/// ancien terrain : `fill_out_of_bounds` ne peint jamais que des cases qui
+/// étaient hors-limites, donc annuler revient toujours à les y reposer.
+enum UndoEntry {
+    Cell(Pos, TerrainKind),
+    Fill(Vec<Pos>),
+}
+
 /// État de l'éditeur de trou (voir `ROADMAP.md`, "Builder de trous"). Édite
 /// un seul fichier `.course` à la fois : grille locale (taille déclarée à
 /// l'en-tête, pas nécessairement 100x60 pleine), curseur, historique
@@ -950,7 +962,7 @@ struct BuilderState {
     height: usize,
     tiles: Vec<Vec<TerrainKind>>,
     cursor: Pos,
-    undo_stack: Vec<(Pos, TerrainKind)>,
+    undo_stack: Vec<UndoEntry>,
     mode: BuilderMode,
     text_input: String,
     /// Chemin en attente de confirmation d'écrasement
@@ -1047,9 +1059,39 @@ impl BuilderState {
     /// net à la dernière case plutôt que de boucler au début.
     fn type_terrain(&mut self, terrain: TerrainKind) {
         let old = self.tiles[self.cursor.y][self.cursor.x];
-        self.undo_stack.push((self.cursor, old));
+        self.undo_stack.push(UndoEntry::Cell(self.cursor, old));
         self.tiles[self.cursor.y][self.cursor.x] = terrain;
         self.advance_cursor();
+    }
+
+    /// Remplace d'un coup toutes les cases encore hors-limites par
+    /// `terrain` — jamais les cases déjà peintes, pour rester sans risque à
+    /// utiliser même après avoir commencé à détailler un trou (voir
+    /// `ROADMAP.md`). Renvoie le nombre de cases effectivement changées
+    /// (pour le message de confirmation) ; n'empile une entrée d'annulation
+    /// que si au moins une case a changé, pour ne pas polluer l'historique
+    /// d'un comblement qui n'a rien fait (grille déjà entièrement peinte).
+    /// Choisir hors-limites comme terrain de comblement est un no-op
+    /// délibéré (rien à "combler" avec du hors-limites) plutôt qu'un
+    /// comblement qui ne change rien tout en prétendant avoir agi.
+    fn fill_out_of_bounds(&mut self, terrain: TerrainKind) -> usize {
+        if terrain == TerrainKind::OutOfBounds {
+            return 0;
+        }
+        let mut changed = Vec::new();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.tiles[y][x] == TerrainKind::OutOfBounds {
+                    self.tiles[y][x] = terrain;
+                    changed.push(Pos { x, y });
+                }
+            }
+        }
+        let count = changed.len();
+        if count > 0 {
+            self.undo_stack.push(UndoEntry::Fill(changed));
+        }
+        count
     }
 
     fn advance_cursor(&mut self) {
@@ -1073,12 +1115,26 @@ impl BuilderState {
         }
     }
 
-    /// Dépile la dernière case peinte, restaure son ancien terrain, et
-    /// replace le curseur dessus.
+    /// Dépile la dernière entrée d'annulation : une case peinte (restaure
+    /// son ancien terrain, replace le curseur dessus) ou tout un comblement
+    /// de hors-limites (`fill_out_of_bounds`, annulé en un seul `U` — remet
+    /// toutes les cases concernées en hors-limites, curseur sur la
+    /// dernière d'entre elles).
     fn undo(&mut self) {
-        if let Some((pos, old)) = self.undo_stack.pop() {
-            self.tiles[pos.y][pos.x] = old;
-            self.cursor = pos;
+        match self.undo_stack.pop() {
+            Some(UndoEntry::Cell(pos, old)) => {
+                self.tiles[pos.y][pos.x] = old;
+                self.cursor = pos;
+            }
+            Some(UndoEntry::Fill(positions)) => {
+                if let Some(&last) = positions.last() {
+                    self.cursor = last;
+                }
+                for pos in positions {
+                    self.tiles[pos.y][pos.x] = TerrainKind::OutOfBounds;
+                }
+            }
+            None => {}
         }
     }
 
@@ -1413,6 +1469,9 @@ fn run_builder<B: ratatui::backend::Backend>(
                             KeyCode::Right => state.move_cursor(1, 0),
                             KeyCode::Char('u') | KeyCode::Char('U') => state.undo(),
                             KeyCode::Char('r') | KeyCode::Char('R') => state.rotate(),
+                            KeyCode::Char('c') | KeyCode::Char('C') => {
+                                state.mode = BuilderMode::FillingBackground;
+                            }
                             KeyCode::Char('n') | KeyCode::Char('N') => {
                                 state.text_input.clear();
                                 state.mode = BuilderMode::EditingName;
@@ -1505,6 +1564,26 @@ fn run_builder<B: ratatui::backend::Backend>(
                         KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                             state.pending_save_path = None;
                             state.mode = BuilderMode::EnteringSaveName;
+                        }
+                        _ => {}
+                    },
+                    BuilderMode::FillingBackground => match key.code {
+                        KeyCode::Esc => state.mode = BuilderMode::Drawing,
+                        KeyCode::Char(c) => {
+                            if let Some(terrain) = terrain_from_builder_key(c) {
+                                let count = state.fill_out_of_bounds(terrain);
+                                state.message = Some(match state.lang {
+                                    Lang::En if count == 0 => {
+                                        "Nothing to fill.".to_string()
+                                    }
+                                    Lang::Fr if count == 0 => {
+                                        "Rien à combler.".to_string()
+                                    }
+                                    Lang::En => format!("Filled {count} cells."),
+                                    Lang::Fr => format!("{count} cases comblées."),
+                                });
+                                state.mode = BuilderMode::Drawing;
+                            }
                         }
                         _ => {}
                     },
@@ -2609,6 +2688,92 @@ mod tests {
         assert_eq!(builder.height, 2);
         assert_eq!(builder.tiles, original);
         assert_eq!(builder.orientation, BuilderOrientation::Horizontal);
+    }
+
+    #[test]
+    fn fill_out_of_bounds_only_replaces_cells_still_out_of_bounds() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 3;
+        builder.height = 2;
+        builder.tiles = vec![
+            vec![TerrainKind::OutOfBounds, TerrainKind::Tee, TerrainKind::OutOfBounds],
+            vec![TerrainKind::OutOfBounds, TerrainKind::OutOfBounds, TerrainKind::Bunker],
+        ];
+
+        let count = builder.fill_out_of_bounds(TerrainKind::Fairway);
+
+        assert_eq!(count, 4, "seules les 4 cases hors-limites doivent être comptées");
+        assert_eq!(
+            builder.tiles,
+            vec![
+                vec![TerrainKind::Fairway, TerrainKind::Tee, TerrainKind::Fairway],
+                vec![TerrainKind::Fairway, TerrainKind::Fairway, TerrainKind::Bunker],
+            ],
+            "le tee et le bunker déjà peints ne doivent pas être touchés"
+        );
+    }
+
+    #[test]
+    fn fill_out_of_bounds_with_out_of_bounds_itself_is_a_no_op() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 2;
+        builder.height = 2;
+        builder.tiles = vec![vec![TerrainKind::OutOfBounds; 2]; 2];
+
+        let count = builder.fill_out_of_bounds(TerrainKind::OutOfBounds);
+
+        assert_eq!(count, 0);
+        assert!(builder.undo_stack.is_empty(), "un comblement sans effet ne doit pas polluer l'annulation");
+    }
+
+    #[test]
+    fn fill_out_of_bounds_does_not_record_undo_when_nothing_changes() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 2;
+        builder.height = 1;
+        builder.tiles = vec![vec![TerrainKind::Fairway, TerrainKind::Bunker]];
+
+        let count = builder.fill_out_of_bounds(TerrainKind::Water);
+
+        assert_eq!(count, 0, "aucune case hors-limites, rien à combler");
+        assert!(builder.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn undo_reverts_a_whole_fill_in_a_single_call() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 3;
+        builder.height = 2;
+        builder.tiles = vec![vec![TerrainKind::OutOfBounds; 3]; 2];
+
+        builder.fill_out_of_bounds(TerrainKind::Rough);
+        assert!(builder.tiles.iter().flatten().all(|t| *t == TerrainKind::Rough));
+
+        builder.undo();
+
+        assert!(
+            builder.tiles.iter().flatten().all(|t| *t == TerrainKind::OutOfBounds),
+            "un seul undo doit annuler tout le comblement, pas juste une case"
+        );
+    }
+
+    #[test]
+    fn undo_after_a_fill_does_not_touch_cells_painted_before_it() {
+        let mut builder = BuilderState::new(4, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 2;
+        builder.height = 1;
+        builder.tiles = vec![vec![TerrainKind::Tee, TerrainKind::OutOfBounds]];
+
+        builder.fill_out_of_bounds(TerrainKind::Fairway);
+        assert_eq!(builder.tiles[0], vec![TerrainKind::Tee, TerrainKind::Fairway]);
+
+        builder.undo();
+
+        assert_eq!(
+            builder.tiles[0],
+            vec![TerrainKind::Tee, TerrainKind::OutOfBounds],
+            "le tee peint avant le comblement doit rester intact"
+        );
     }
 
     #[test]

@@ -298,6 +298,27 @@
       simple vérifiée case par case, 4 rotations reviennent à la grille de
       départ) et vérifié en tmux.
 
+      **Ajout post-v1** : comblement en masse du hors-limites
+      (`BuilderState::fill_out_of_bounds` dans `main.rs`, touche `C` en
+      mode dessin) — sans ça, une grille neuve (par ex. 55x33 = 1815
+      cases) exige de taper chaque case une par une pour la remplir, ce
+      qui n'est ni rapide ni amusant. `C` bascule vers un mode d'attente
+      (`BuilderMode::FillingBackground`) qui demande la touche de terrain
+      à utiliser, puis remplace d'un coup **uniquement** les cases encore
+      hors-limites par ce terrain — jamais les cases déjà peintes, pour
+      rester sans risque à utiliser même après avoir commencé à détailler
+      un trou. Choisir hors-limites comme terrain de comblement est un
+      no-op délibéré. `BuilderState::undo_stack` est passé de
+      `Vec<(Pos, TerrainKind)>` à `Vec<UndoEntry>` (`Cell`/`Fill`) pour que
+      tout un comblement s'annule en un seul `U` plutôt que case par case
+      (un `Fill` ne mémorise que les positions touchées, jamais leur
+      ancien terrain, puisqu'il ne peint jamais que des cases qui étaient
+      hors-limites). Testé (ne touche que les cases hors-limites, no-op
+      hors-limites→hors-limites, annulation d'un comblement en un seul
+      appel sans toucher aux cases peintes avant ou après) et vérifié en
+      tmux (grille 1815 cases comblée en un appui, undo revient
+      entièrement en un appui).
+
       **Alternatives envisagées et écartées** :
       - Scan/photo du canevas PDF (`tools/hole_design_canvas.pdf`) dessiné
         au stylo (une couleur par terrain), converti en `.course` par

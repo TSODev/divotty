@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The hole builder can now flood-fill every remaining out-of-bounds cell
+  with a terrain of your choice: press `C`, then the terrain key you want
+  to use. Already-painted cells are left untouched, so it's safe to use
+  even partway through detailing a hole — handy since a fresh grid can be
+  well over a thousand cells to paint by hand otherwise. Undoing (`U`)
+  reverts the whole fill in one press rather than one cell at a time.
 - The hole builder can now rotate the grid 90° with `R`: width and height
   swap and whatever you've already drawn turns with them, instead of just
   reinterpreting the same data with new dimensions. Handy for switching a

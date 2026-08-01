@@ -59,6 +59,12 @@ pub enum BuilderMode {
     /// nouveau fichier au lieu de remplacer l'ancien). `Entrée`/`Y` pour
     /// écraser, `Échap`/`N` pour revenir à la saisie du nom et le changer.
     ConfirmOverwrite,
+    /// En attente d'une touche de terrain (voir `C`, "combler") pour
+    /// remplacer d'un coup toutes les cases encore hors-limites par ce
+    /// terrain — jamais les cases déjà peintes, pour rester sans risque à
+    /// utiliser même après avoir commencé à détailler un trou. `Échap`
+    /// annule sans rien changer.
+    FillingBackground,
 }
 
 pub(crate) fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
@@ -685,15 +691,24 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                         Style::default().fg(Color::White),
                     ));
                 }
+                BuilderMode::FillingBackground => {
+                    controls_lines.push(Line::styled(
+                        match self.lang {
+                            Lang::En => "Fill with:",
+                            Lang::Fr => "Combler avec :",
+                        },
+                        Style::default().fg(Color::Gray),
+                    ));
+                }
             }
             let base: &str = match self.mode {
                 BuilderMode::Drawing => match self.lang {
                     Lang::En => {
-                        "letters  paint\n↑↓←→  move\nU  undo\nR  rotate\nN  rename\nS  save\n\
-                         Esc Esc  menu\nqq  quit"
+                        "letters  paint\n↑↓←→  move\nU  undo\nR  rotate\nC  fill\nN  rename\n\
+                         S  save\nEsc Esc  menu\nqq  quit"
                     }
                     Lang::Fr => {
-                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nR  pivoter\n\
+                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nR  pivoter\nC  combler\n\
                          N  renommer\nS  sauver\nÉchap Échap  menu\nqq  quitter"
                     }
                 },
@@ -708,6 +723,10 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                 BuilderMode::ConfirmOverwrite => match self.lang {
                     Lang::En => "Enter/Y  overwrite\nEsc/N  rename",
                     Lang::Fr => "Entrée/Y  écraser\nÉchap/N  renommer",
+                },
+                BuilderMode::FillingBackground => match self.lang {
+                    Lang::En => "letters  choose\nEsc  cancel",
+                    Lang::Fr => "lettres  choisir\nÉchap  annuler",
                 },
             };
             controls_lines.extend(

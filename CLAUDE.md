@@ -446,13 +446,30 @@ Fait et testé :
   ils ne correspondraient plus à rien de cohérent, et remapper resterait
   complexe pour un gain marginal. Vérifié en tmux (motif distinct dessiné
   en haut à gauche, tourne bien en colonne verticale après `R`).
+- Comblement en masse du hors-limites (`BuilderState::fill_out_of_bounds`
+  dans `main.rs`) : touche `C` en mode dessin, bascule vers un mode
+  d'attente (`BuilderMode::FillingBackground`, panneau Contrôles affiche
+  "Fill with:"/"Combler avec :") qui demande la touche de terrain à
+  utiliser, puis remplace d'un coup **uniquement** les cases encore
+  hors-limites — jamais celles déjà peintes, pour rester sans risque une
+  fois qu'on a commencé à détailler un trou. Sans ça, remplir une grille
+  neuve (55x33 = 1815 cases) exigeait de taper chaque case une par une.
+  Choisir hors-limites comme terrain de comblement est un no-op délibéré
+  (rien à combler avec du hors-limites). `BuilderState::undo_stack` est
+  passé de `Vec<(Pos, TerrainKind)>` à `Vec<UndoEntry>` (`Cell`/`Fill`)
+  pour qu'un comblement entier s'annule en un seul `U` plutôt que case par
+  case — un `Fill` ne mémorise que les positions touchées (toujours
+  d'anciennes cases hors-limites, pas besoin de retenir un ancien terrain
+  différent par case). Vérifié en tmux : grille 1815 cases comblée en un
+  appui sur `C` puis `.`, `U` revient entièrement en un seul appui sans
+  toucher aux cases peintes avant ou après le comblement.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 53 tests unitaires dans
-  `src/main.rs` (106 au total avec `core` et `tui`), mais rien qui simule un
+  `adjust_die_strength`...) a maintenant 63 tests unitaires dans
+  `src/main.rs` (116 au total avec `core` et `tui`), mais rien qui simule un
   vrai terminal/`crossterm`.
 
 ## Publication crates.io
