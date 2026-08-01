@@ -809,6 +809,23 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
       stylées plutôt qu'une seule chaîne, pour que seule l'info pertinente
       réagisse en couleur/gras sans teinter tout le panneau.
 
+## v0.6 — Revue UX/visuelle des écrans
+
+Le v0.5 ci-dessus n'a repassé en revue que la sidebar de jeu. Étape dédiée
+à ré-analyser, améliorer si besoin et moderniser/gamifier chacun des autres
+écrans du jeu — volontairement une simple liste de "à revoir" plutôt que
+des solutions déjà figées, pour ne pas préjuger des idées avant une vraie
+session de brainstorm par écran le moment venu.
+
+- [ ] Menu de sélection de parcours (`CourseMenuState`, `menu.rs`)
+- [ ] Scorecard de fin de partie (`ScorecardView`, `scorecard.rs`)
+- [ ] Écrans du builder de trous : en-tête (`BuilderSetupView`), dessin
+      (`BuilderSidebarView`/`BuilderView`), sélecteur (`HolePickerView`/
+      `HolePreviewView`)
+- [ ] Écrans du builder de parcours : sélecteur (`CoursePickerView`),
+      en-tête (`CourseSetupView`), assemblage (`CourseBuilderSidebarView`),
+      sélecteur d'ajout de trou (`HoleAddPickerView`)
+
 ## v1.0 — Polish
 - [x] Sauvegarde/reprise de partie (un seul emplacement, `save.yaml` :
       parcours, trou courant, coups, position de balle, club, visée)
@@ -820,6 +837,18 @@ de planification. Chaque item isolé dans `src/tui/`, aucun changement côté
 - [ ] Sons/feedback terminal (bell, ou intégration `cpal` optionnelle)
 - [ ] Thème de couleurs configurable
 - [ ] Parcours à 18 trous complet et équilibré
+- [ ] Version Windows testée (à prévoir juste avant la v1.0). Rien de
+      spécifique à Unix dans le code actuel — `crossterm`/`ratatui` sont
+      pensés multiplateforme dès le départ, et `directories::ProjectDirs`
+      (répertoire de données) gère déjà l'équivalent Windows
+      (`%APPDATA%\...`), voir plus haut. Reste néanmoins à vérifier pour de
+      vrai plutôt que de supposer que "ça doit marcher" : compiler pour
+      `x86_64-pc-windows-gnu` (ou `-msvc`), et surtout tester le rendu dans
+      un vrai terminal Windows (cmd.exe, PowerShell, Windows Terminal) —
+      l'affichage Unicode/largeur de caractères y a toujours été plus
+      capricieux que sur Linux/macOS (déjà rencontré une fois sur ce
+      projet : `⛳`, U+26F3, s'affichait sur 2 colonnes et désalignait la
+      ligne, voir `terrain_style()` dans `render.rs`).
 - [x] Publication sur crates.io — `divotty` v0.2.0 en ligne,
       `cargo install divotty` fonctionnel, y compris les vrais parcours
       embarqués (voir `CLAUDE.md`)
