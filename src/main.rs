@@ -1100,6 +1100,12 @@ struct BuilderState {
     /// actif, le curseur (`cursor`) formant le coin opposé. `None` en
     /// dehors de ce mode.
     block_anchor: Option<Pos>,
+    /// Terrain "armé" en mode bloc — choisi en tapant une touche de
+    /// terrain (répétable pour changer d'avis avant de valider), affiché
+    /// en aperçu dans tout le rectangle. `None` tant qu'aucune touche de
+    /// terrain n'a encore été tapée ; `Entrée` ne fait rien tant que
+    /// c'est le cas, il n'y a encore rien à remplir.
+    block_terrain: Option<TerrainKind>,
 }
 
 impl BuilderState {
@@ -1129,6 +1135,7 @@ impl BuilderState {
             exit_confirm: false,
             source_path: None,
             block_anchor: None,
+            block_terrain: None,
         }
     }
 
@@ -1158,6 +1165,7 @@ impl BuilderState {
             exit_confirm: false,
             source_path,
             block_anchor: None,
+            block_terrain: None,
         }
     }
 
@@ -1477,6 +1485,7 @@ fn setup_builder<B: ratatui::backend::Backend>(
                     tiles: &blank_tiles,
                     cursor: None,
                     block_anchor: None,
+                    block_terrain: None,
                     viewport_w: columns[1].width.saturating_sub(2) as usize,
                     viewport_h: columns[1].height.saturating_sub(2) as usize,
                 },
@@ -1524,6 +1533,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                     grid_height: state.height,
                     mode: state.mode,
                     block_anchor: state.block_anchor,
+                    block_terrain: state.block_terrain,
                     text_input: &state.text_input,
                     pending_save_name: state
                         .pending_save_path
@@ -1542,6 +1552,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                     tiles: &state.tiles,
                     cursor: Some(state.cursor),
                     block_anchor: state.block_anchor,
+                    block_terrain: state.block_terrain,
                     viewport_w: columns[1].width.saturating_sub(2) as usize,
                     viewport_h: columns[1].height.saturating_sub(2) as usize,
                 },
@@ -1751,14 +1762,30 @@ fn run_builder<B: ratatui::backend::Backend>(
                     BuilderMode::BlockSelect => match key.code {
                         KeyCode::Esc => {
                             state.block_anchor = None;
+                            state.block_terrain = None;
                             state.mode = BuilderMode::Drawing;
                         }
                         KeyCode::Up => state.move_cursor(0, -1),
                         KeyCode::Down => state.move_cursor(0, 1),
                         KeyCode::Left => state.move_cursor(-1, 0),
                         KeyCode::Right => state.move_cursor(1, 0),
+                        // Une touche de terrain "arme" seulement la couleur
+                        // à utiliser (répétable pour changer d'avis avant
+                        // de valider, voir l'aperçu en direct dans
+                        // `BuilderView`) — `Entrée` valide le remplissage,
+                        // pas la touche de terrain elle-même : sinon,
+                        // taper une touche de terrain juste après `R` (sans
+                        // avoir encore redimensionné) remplirait tout de
+                        // suite un rectangle de 1x1 et ressortirait du mode
+                        // bloc, ce qui a surpris un joueur qui s'attendait
+                        // à d'abord "charger" une couleur comme un pinceau.
                         KeyCode::Char(c) => {
                             if let Some(terrain) = terrain_from_builder_key(c) {
+                                state.block_terrain = Some(terrain);
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if let Some(terrain) = state.block_terrain {
                                 let count = state.fill_block(terrain);
                                 state.message = Some(match state.lang {
                                     Lang::En if count == 0 => "Nothing to fill.".to_string(),
@@ -1767,6 +1794,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                                     Lang::Fr => format!("{count} cases comblées."),
                                 });
                                 state.block_anchor = None;
+                                state.block_terrain = None;
                                 state.mode = BuilderMode::Drawing;
                             }
                         }

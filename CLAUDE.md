@@ -522,19 +522,24 @@ Fait et testé :
   atterrir pile sur le trou, il ne roule pas sur le reste de sa
   trajectoire). Rend le putting un peu plus indulgent, cohérent avec la
   dispersion qui se resserre déjà près du trou. Testé et vérifié en jeu.
-- Mode bloc du builder (voir `ROADMAP.md` pour le détail) : touche `R`,
-  peint un rectangle de terrain d'un coup (complément de `C`/combler pour
-  des formes délimitées — bunker, green, bande de rough — plutôt que tout
-  le hors-limites restant). Ancré sur la case courante
-  (`BuilderState::block_anchor`), les flèches déplacent le coin opposé
-  avec un aperçu surligné en direct (`BuilderView::block_anchor`), une
-  touche de terrain remplit tout le rectangle (`fill_block()`).
-  Contrairement à `C`, écrase n'importe quel terrain déjà présent — sauf
-  le tee et le trou, jamais écrasés même dans la zone couverte (on les
-  place généralement en premier). `UndoEntry::Block` mémorise l'ancien
-  terrain de chaque case individuellement (contrairement à `Fill`, qui
-  suppose un retour au hors-limites) puisque le mode bloc peut écraser
-  n'importe quoi — annulable en un seul `U`. Testé et vérifié en tmux.
+- Mode bloc du builder (voir `ROADMAP.md` pour le détail, y compris une
+  révision d'ergonomie après signalement) : touche `R`, peint un
+  rectangle de terrain d'un coup (complément de `C`/combler pour des
+  formes délimitées — bunker, green, bande de rough — plutôt que tout le
+  hors-limites restant). Ancré sur la case courante
+  (`BuilderState::block_anchor`), les flèches déplacent le coin opposé.
+  Une touche de terrain **arme** seulement la couleur
+  (`BuilderState::block_terrain`, répétable pour changer d'avis), avec un
+  aperçu en direct dans cette couleur sur toute la carte
+  (`BuilderView::block_terrain` — le tee/le trou restent visibles tels
+  quels, jamais recouverts même par l'aperçu) ; `Entrée` valide
+  réellement (`fill_block()`), `Échap` annule à tout moment. Contrairement
+  à `C`, écrase n'importe quel terrain déjà présent — sauf le tee et le
+  trou, jamais écrasés même dans la zone couverte (on les place
+  généralement en premier). `UndoEntry::Block` mémorise l'ancien terrain
+  de chaque case individuellement (contrairement à `Fill`, qui suppose un
+  retour au hors-limites) puisque le mode bloc peut écraser n'importe
+  quoi — annulable en un seul `U`. Testé et vérifié en tmux.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion

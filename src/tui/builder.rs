@@ -348,6 +348,7 @@ impl<'a> Widget for HolePreviewView<'a> {
                         tiles: &tiles,
                         cursor: None,
                         block_anchor: None,
+                        block_terrain: None,
                         viewport_w: map_area.width as usize,
                         viewport_h: map_area.height as usize,
                     }
@@ -459,6 +460,10 @@ pub struct BuilderSidebarView<'a> {
     /// Ancre du rectangle en mode bloc (`BuilderMode::BlockSelect`),
     /// affichée dans le panneau Contrôles.
     pub block_anchor: Option<Pos>,
+    /// Terrain armé en mode bloc (voir `BuilderState::block_terrain`),
+    /// affiché dans le panneau Contrôles tant qu'aucun n'est encore choisi
+    /// ou pour rappeler lequel est actif.
+    pub block_terrain: Option<TerrainKind>,
     pub text_input: &'a str,
     /// Nom de fichier (sans extension) en attente de confirmation
     /// d'écrasement, affiché dans `BuilderMode::ConfirmOverwrite`.
@@ -680,6 +685,15 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                             Style::default().fg(Color::Gray),
                         ));
                     }
+                    controls_lines.push(Line::styled(
+                        match (self.block_terrain, self.lang) {
+                            (Some(t), Lang::En) => format!("Fill: {} (Enter)", t.to_char()),
+                            (Some(t), Lang::Fr) => format!("Remplir : {} (Entrée)", t.to_char()),
+                            (None, Lang::En) => "Fill: (pick a letter)".to_string(),
+                            (None, Lang::Fr) => "Remplir : (choisir)".to_string(),
+                        },
+                        Style::default().fg(Color::White),
+                    ));
                 }
             }
             let base: &str = match self.mode {
@@ -714,8 +728,10 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                     Lang::Fr => "(sans extension)\nEntrée  valider\nÉchap  garder nom",
                 },
                 BuilderMode::BlockSelect => match self.lang {
-                    Lang::En => "↑↓←→  resize\nletters  fill\nEsc  cancel",
-                    Lang::Fr => "↑↓←→  redimensionner\nlettres  remplir\nÉchap  annuler",
+                    Lang::En => "↑↓←→  resize\nletters  choose fill\nEnter  apply\nEsc  cancel",
+                    Lang::Fr => {
+                        "↑↓←→  redimensionner\nlettres  choisir\nEntrée  valider\nÉchap  annuler"
+                    }
                 },
             };
             controls_lines.extend(
@@ -742,6 +758,12 @@ pub struct BuilderView<'a> {
     /// voir `main.rs`) — `Some` surligne tout le rectangle entre les deux
     /// (aperçu avant de remplir), `None` en dehors de ce mode.
     pub block_anchor: Option<Pos>,
+    /// Terrain armé en mode bloc (voir `BuilderState::block_terrain`) —
+    /// tant qu'il est `Some`, le rectangle prévisualise ce terrain en
+    /// direct (sauf sur le tee/le trou, jamais recouverts) plutôt qu'un
+    /// simple surlignage gris du terrain déjà en place, pour voir
+    /// exactement ce qui sera peint avant de valider avec `Entrée`.
+    pub block_terrain: Option<TerrainKind>,
     pub viewport_w: usize,
     pub viewport_h: usize,
 }
@@ -788,12 +810,22 @@ impl<'a> Widget for BuilderView<'a> {
             for col in 0..content_w {
                 let gx = ox + col;
                 let gy = oy + row;
-                let terrain = self.tiles[gy][gx];
-                let (ch, color) = terrain_style(terrain);
-                let is_cursor = self.cursor == Some(Pos { x: gx, y: gy });
+                let real_terrain = self.tiles[gy][gx];
                 let is_in_block = block_bounds.is_some_and(|(x0, x1, y0, y1)| {
                     gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1
                 });
+                // Le tee/le trou ne sont jamais recouverts par l'aperçu,
+                // même dans la zone du rectangle (`fill_block` ne les
+                // écrase pas non plus) — pour voir dès l'aperçu qu'ils
+                // resteront protégés.
+                let is_protected = matches!(real_terrain, TerrainKind::Tee | TerrainKind::Hole);
+                let display_terrain = if is_in_block && !is_protected {
+                    self.block_terrain.unwrap_or(real_terrain)
+                } else {
+                    real_terrain
+                };
+                let (ch, color) = terrain_style(display_terrain);
+                let is_cursor = self.cursor == Some(Pos { x: gx, y: gy });
 
                 let x = inner.x + margin_x + col as u16;
                 let y = inner.y + margin_y + row as u16;
