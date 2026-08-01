@@ -923,6 +923,12 @@ session de brainstorm par écran le moment venu.
       retrouvés à la relance depuis ce même dossier vide.
 
 ## Idées non priorisées
+- Mode "urgence" (boss key) : une touche dédiée bascule instantanément
+  l'écran de jeu vers un faux écran de terminal "travail sérieux" (logs qui
+  défilent, sobre, sans rien de golf), puis y revient exactement où la
+  partie en était — pas de confirmation, la rapidité est tout l'intérêt.
+  Purement `tui`, aucun changement côté `core`. Touche pressentie : `B`
+  (libre en jeu), à confirmer.
 - Mode multijoueur local (tour par tour, même terminal)
 - Import de cartes depuis un format tiers
 - Statistiques de progression (moyenne de coups par trou sur plusieurs parties)
