@@ -221,6 +221,25 @@
       (jauge de précision, etc.) — trop de complexité ajoutée pour un seul
       club, alors que ce changement reste une petite formule sur la
       dispersion existante.
+- [x] Un putt qui passe *sur* le trou y tombe, même s'il continuait de
+      rouler au-delà d'après le calcul brut (signalé : `holed` ne comparait
+      jusque-là que la case d'arrivée finale à celle du trou, sans regarder
+      le chemin parcouru — un putt bien aligné mais trop fort roulait donc
+      simplement au-delà sans y entrer). `passes_through()` (`shot.rs`,
+      testable sans RNG) vérifie si le segment départ→arrivée traverse la
+      case du trou via `sample_line` (remontée dans `core/shot.rs` pour
+      l'animation du déplacement, voir plus haut) ; si oui, `resolve_shot`
+      arrête la balle sur le trou plutôt que sur l'arrivée calculée. Rend
+      le putting un peu plus indulgent, cohérent avec la direction déjà
+      prise juste au-dessus (dispersion qui se resserre près du trou) —
+      pas une nouvelle contrainte. Uniquement le Putter : un coup aérien
+      (bois/fer/wedge) doit atterrir pile sur le trou pour y entrer, il ne
+      "roule" pas sur le reste de sa trajectoire pour pouvoir y tomber en
+      passant au-dessus. Testé (détection de traversée en ligne droite,
+      absence de faux positif si l'arrivée est en deçà ou à côté du trou,
+      scénario bout-en-bout via `resolve_shot` avec départ/trou tout
+      proches) et vérifié en jeu (parties réelles avec putter, `Holed in N
+      strokes` obtenu depuis un putt qui aurait dû dépasser le trou).
 - [ ] Pente sur le green (idée candidate pour l'item ci-dessus) : une
       indication d'altitude par case du green qui dévie la trajectoire du
       putt de façon **déterministe** (vers la pente descendante) plutôt que

@@ -514,13 +514,24 @@ Fait et testé :
   temps, et l'aperçu de visée disparaît (le résultat est déjà décidé).
   Testé et vérifié en tmux (mouvement visible et régulier, accélération
   immédiate sur une touche).
+- Un putt qui passe sur le trou y tombe (voir `ROADMAP.md` pour le
+  détail) : `holed` ne comparait jusque-là que la case d'arrivée finale à
+  celle du trou, sans regarder le chemin parcouru — un putt bien aligné
+  mais trop fort roulait donc simplement au-delà sans y entrer.
+  `passes_through()` (`core/shot.rs`, testable sans RNG) vérifie si le
+  segment départ→arrivée traverse la case du trou via `sample_line` ; si
+  oui, `resolve_shot` arrête la balle sur le trou plutôt que sur
+  l'arrivée calculée. Seul le Putter est concerné (un coup aérien doit
+  atterrir pile sur le trou, il ne roule pas sur le reste de sa
+  trajectoire). Rend le putting un peu plus indulgent, cohérent avec la
+  dispersion qui se resserre déjà près du trou. Testé et vérifié en jeu.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
   `adjust_die_strength`...) a maintenant 73 tests unitaires dans
-  `src/main.rs` (135 au total avec `core` et `tui`), mais rien qui simule un
+  `src/main.rs` (140 au total avec `core` et `tui`), mais rien qui simule un
   vrai terminal/`crossterm`.
 
 ## Publication crates.io

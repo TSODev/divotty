@@ -279,6 +279,15 @@ fn backtrack_to_safe_landing(hole: &Hole, from: Pos, landing: Pos) -> Pos {
     from
 }
 
+/// Vrai si le segment `from`→`landing` traverse `hole_pos` sans que
+/// `landing` soit déjà exactement le trou (auquel cas c'est déjà géré par
+/// ailleurs). Isolée de `resolve_shot` pour rester testable sans RNG — voir
+/// son usage (uniquement pour le Putter, qui roule au sol) juste après le
+/// calcul de l'arrivée.
+fn passes_through(from: Pos, landing: Pos, hole_pos: Pos) -> bool {
+    landing != hole_pos && sample_line(from, landing).contains(&hole_pos)
+}
+
 /// Aperçu affichable avant de jouer un coup : où la balle peut
 /// raisonnablement atterrir selon le club et la direction visée, avant même
 /// de lancer le dé. Ne tient compte ni des obstacles sur la trajectoire
@@ -403,6 +412,15 @@ pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, wind: Wind, rng: &mut im
             }
         }
     };
+
+    // Un putt roule au sol : s'il passe *sur* le trou en chemin vers son
+    // point d'arrivée calculé, il y tombe plutôt que de continuer à rouler
+    // au-delà — contrairement à un coup aérien (bois/fer/wedge), qui doit
+    // atterrir pile sur le trou pour y entrer puisqu'il ne "roule" pas sur
+    // le reste de la trajectoire. Seul le Putter est concerné.
+    if shot.club == Club::Putter && passes_through(from, landing, hole.hole_pos) {
+        landing = hole.hole_pos;
+    }
 
     let mut landing_terrain = hole.terrain_at(landing).unwrap_or(TerrainKind::OutOfBounds);
     let landing_profile = landing_terrain.profile();
@@ -754,6 +772,70 @@ mod tests {
         let windy = resolve_shot(&hole, hole.tee, shot, strong_crosswind, &mut rng_wind);
 
         assert_eq!(calm.landing, windy.landing, "un putt ne doit jamais être affecté par le vent");
+    }
+
+    #[test]
+    fn passes_through_detects_the_hole_on_a_straight_overshoot() {
+        let from = Pos { x: 10, y: 10 };
+        let landing = Pos { x: 20, y: 10 }; // roule au-delà du trou
+        let hole_pos = Pos { x: 15, y: 10 }; // pile sur le chemin
+        assert!(passes_through(from, landing, hole_pos));
+    }
+
+    #[test]
+    fn passes_through_is_false_when_the_putt_falls_short() {
+        let from = Pos { x: 10, y: 10 };
+        let landing = Pos { x: 12, y: 10 }; // s'arrête avant le trou
+        let hole_pos = Pos { x: 15, y: 10 };
+        assert!(!passes_through(from, landing, hole_pos));
+    }
+
+    #[test]
+    fn passes_through_is_false_when_off_line() {
+        let from = Pos { x: 10, y: 10 };
+        let landing = Pos { x: 20, y: 10 };
+        let hole_pos = Pos { x: 15, y: 15 }; // à côté de la trajectoire, pas dessus
+        assert!(!passes_through(from, landing, hole_pos));
+    }
+
+    #[test]
+    fn passes_through_is_false_when_landing_is_already_the_hole() {
+        let from = Pos { x: 10, y: 10 };
+        let hole_pos = Pos { x: 20, y: 10 };
+        // Déjà géré ailleurs (`holed` compare directement `landing_terrain`) :
+        // pas la peine de le redétecter ici.
+        assert!(!passes_through(from, hole_pos, hole_pos));
+    }
+
+    #[test]
+    fn a_putt_that_rolls_over_the_hole_falls_in_instead_of_overshooting() {
+        // Trou et départ très proches l'un de l'autre, alignés à l'horizontale,
+        // avec un plafond de dé bas : la dispersion du putter est quasi nulle
+        // à cette distance (`putter_base_dispersion`), et le club le plus
+        // faible/dé le plus bas font que la distance calculée dépasse tout
+        // juste le trou plutôt que de s'arrêter dessus pile — sans ce
+        // correctif, la balle roulerait au-delà sans y tomber.
+        let mut lines = Vec::with_capacity(COURSE_HEIGHT);
+        for y in 0..COURSE_HEIGHT {
+            let mut row = vec!['.'; COURSE_WIDTH];
+            if y == COURSE_HEIGHT / 2 {
+                row[10] = 'D';
+                row[11] = 'H';
+            }
+            lines.push(row.into_iter().collect::<String>());
+        }
+        let raw = format!("name: \"Test\"\npar: 3\n---\n{}\n", lines.join("\n"));
+        let hole = Hole::parse(&raw).unwrap();
+
+        let shot = Shot {
+            club: Club::Putter,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 1,
+        };
+        let mut rng = Pcg32::new(1, 1);
+        let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
+
+        assert!(result.holed, "un putt qui passe sur un trou tout proche doit y tomber");
     }
 
     #[test]

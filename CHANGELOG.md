@@ -115,6 +115,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ("File name:", "New name:") instead of showing a bare cursor.
 
 ### Changed
+- A putt that rolls over the hole now falls in, even if it would have kept
+  going otherwise — previously only the ball's exact final resting cell
+  counted, so a well-aimed but slightly too strong putt would just roll
+  past. Only the Putter is affected; every other club still has to land
+  exactly on the hole, since it doesn't roll along the ground the rest of
+  the way there.
 - Playing a shot no longer teleports the ball straight to where it lands:
   it now visibly travels there, one grid cell every couple hundred
   milliseconds. A long drive doesn't take proportionally longer to watch
