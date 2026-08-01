@@ -15,7 +15,7 @@ use crate::tui::{
     BuilderMode, BuilderOrientation, BuilderSetupView, BuilderSidebarView, BuilderView,
     CourseBuilderMode, CourseBuilderSidebarView, CourseMenuState, CoursePickerView, CourseSetupView,
     CourseView, HoleAddPickerView, HolePickerView, HolePreviewView, Lang, ScorecardView,
-    SidebarState, Viewport,
+    SidebarState, Viewport, ZoomLevel,
 };
 use directories::ProjectDirs;
 use rand::Rng;
@@ -249,7 +249,7 @@ fn load_game(lang: Lang, data_root: &Path) -> Result<GameState> {
         last_shot: None,
         just_saved: false,
         quit_confirm: false,
-        zoom: false,
+        zoom: ZoomLevel::default(),
     })
 }
 
@@ -290,9 +290,9 @@ struct GameState {
     last_shot: Option<ShotResult>,
     just_saved: bool,
     quit_confirm: bool,
-    /// Zoom sur la carte, activé/désactivé par le joueur (touche `Z`) —
-    /// désactivé par défaut.
-    zoom: bool,
+    /// Niveau de zoom de la carte, cyclé par le joueur (touche `Z`) —
+    /// normal par défaut.
+    zoom: ZoomLevel,
 }
 
 impl GameState {
@@ -322,7 +322,7 @@ impl GameState {
             last_shot: None,
             just_saved: false,
             quit_confirm: false,
-            zoom: false,
+            zoom: ZoomLevel::default(),
         }
     }
 
@@ -708,7 +708,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                     },
                     preview,
                     path,
-                    zoomed: state.zoom,
+                    zoom: state.zoom,
                 },
                 columns[1],
             );
@@ -751,7 +751,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                         KeyCode::Char('r') | KeyCode::Char('R') => state.restart_hole(),
                         KeyCode::Char('m') | KeyCode::Char('M') => return Ok(LoopExit::BackToMenu),
                         KeyCode::Char('l') | KeyCode::Char('L') => state.lang = state.lang.next(),
-                        KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = !state.zoom,
+                        KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = state.zoom.next(),
                         _ => {}
                     }
                     state.quit_confirm = false;
@@ -773,7 +773,7 @@ fn run_loop<B: ratatui::backend::Backend>(
                             state.just_saved = save_game(state, data_root).is_ok();
                         }
                         KeyCode::Char('l') | KeyCode::Char('L') => state.lang = state.lang.next(),
-                        KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = !state.zoom,
+                        KeyCode::Char('z') | KeyCode::Char('Z') => state.zoom = state.zoom.next(),
                         KeyCode::Left => state.nudge_aim(-0.1),
                         KeyCode::Right => state.nudge_aim(0.1),
                         _ => {}

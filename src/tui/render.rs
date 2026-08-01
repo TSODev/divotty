@@ -68,8 +68,30 @@ pub struct CourseView<'a> {
     /// chaque arrêt intermédiaire, un pointillé de balles jaunes reliant
     /// les points consécutifs. `None` tant que le trou n'est pas fini.
     pub path: Option<&'a [Pos]>,
-    /// Zoom activé par le joueur (touche dédiée) — pas automatique.
-    pub zoomed: bool,
+    /// Niveau de zoom choisi par le joueur (touche dédiée) — pas automatique.
+    pub zoom: ZoomLevel,
+}
+
+/// Niveau de zoom de la carte, cycle avec une touche dédiée : normal (une
+/// case = un caractère) → avant (grossi, voir `ZOOM_FACTOR`, utile pour un
+/// putt de 1-2 cases) → arrière (vue d'ensemble réduite pour voir tout le
+/// trou d'un coup, voir `render_overview`) → retour à normal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ZoomLevel {
+    Out,
+    #[default]
+    Normal,
+    In,
+}
+
+impl ZoomLevel {
+    pub fn next(self) -> Self {
+        match self {
+            ZoomLevel::Normal => ZoomLevel::In,
+            ZoomLevel::In => ZoomLevel::Out,
+            ZoomLevel::Out => ZoomLevel::Normal,
+        }
+    }
 }
 
 /// Distance euclidienne discrète entre deux cases de la grille.
@@ -95,6 +117,39 @@ fn sample_line(from: Pos, to: Pos) -> Vec<Pos> {
             }
         })
         .collect()
+}
+
+/// Case (entière) où placer une flèche indiquant la direction de `to`
+/// (le trou) sur le bord de la fenêtre visible `[x_min,x_max] x
+/// [y_min,y_max]`, en projetant le rayon depuis `from` (la balle) jusqu'à
+/// la première bordure rencontrée — suit la direction réelle plutôt qu'un
+/// simple angle collé à un coin : un trou légèrement au sud-est finit près
+/// du bord droit, pas pile au coin.
+fn edge_indicator_pos(from: Pos, to: Pos, x_min: usize, x_max: usize, y_min: usize, y_max: usize) -> Pos {
+    let (fx, fy) = (from.x as f32, from.y as f32);
+    let (tx, ty) = (to.x as f32, to.y as f32);
+    let (dx, dy) = (tx - fx, ty - fy);
+
+    let t_x = if dx > 0.0 {
+        (x_max as f32 - fx) / dx
+    } else if dx < 0.0 {
+        (x_min as f32 - fx) / dx
+    } else {
+        f32::INFINITY
+    };
+    let t_y = if dy > 0.0 {
+        (y_max as f32 - fy) / dy
+    } else if dy < 0.0 {
+        (y_min as f32 - fy) / dy
+    } else {
+        f32::INFINITY
+    };
+    let t = t_x.min(t_y).max(0.0);
+
+    Pos {
+        x: (fx + dx * t).round().clamp(x_min as f32, x_max as f32) as usize,
+        y: (fy + dy * t).round().clamp(y_min as f32, y_max as f32) as usize,
+    }
 }
 
 /// Facteur de grossissement quand le zoom est activé (touche dédiée) :
@@ -172,7 +227,12 @@ impl<'a> Widget for CourseView<'a> {
         let grid_h = self.hole.tiles.len();
         let grid_w = self.hole.tiles.first().map(|r| r.len()).unwrap_or(0);
 
-        let zoom = if self.zoomed { ZOOM_FACTOR } else { 1 };
+        if self.zoom == ZoomLevel::Out {
+            render_overview(self.hole, self.ball, inner, buf);
+            return;
+        }
+
+        let zoom = if self.zoom == ZoomLevel::In { ZOOM_FACTOR } else { 1 };
 
         // Fenêtre visible, en cases de grille : la taille physique de la
         // zone (panneau) et celle demandée par l'appelant (`self.viewport`)
@@ -196,6 +256,29 @@ impl<'a> Widget for CourseView<'a> {
         let content_h_cells = grid_h.min(view_h_cells);
         let margin_x = (inner.width - (content_w_cells * zoom) as u16) / 2;
         let margin_y = (inner.height - (content_h_cells * zoom) as u16) / 2;
+
+        // Le trou est-il hors de la fenêtre visible ? Si oui (et seulement
+        // en zoom normal, voir `ROADMAP.md`), une flèche de boussole prend
+        // sa place sur la case de bord la plus proche de sa direction
+        // réelle — calculée par projection du rayon balle→trou jusqu'à la
+        // première bordure rencontrée (`edge_indicator_pos`), pas un simple
+        // angle collé à un coin.
+        let hole_pos = self.hole.hole_pos;
+        let hole_visible = hole_pos.x >= ox
+            && hole_pos.x < ox + content_w_cells
+            && hole_pos.y >= oy
+            && hole_pos.y < oy + content_h_cells;
+        let edge_indicator: Option<(Pos, &'static str)> = (zoom == 1 && !hole_visible).then(|| {
+            let pos = edge_indicator_pos(
+                self.ball,
+                hole_pos,
+                ox,
+                ox + content_w_cells.saturating_sub(1),
+                oy,
+                oy + content_h_cells.saturating_sub(1),
+            );
+            (pos, compass_arrow(Direction::towards(self.ball, hole_pos)))
+        });
 
         let guide_cells = self
             .preview
@@ -268,6 +351,14 @@ impl<'a> Widget for CourseView<'a> {
                             ch = '●';
                         }
                         color = Color::Red;
+                        modifier = Modifier::BOLD;
+                    }
+                }
+
+                if let Some((indicator_pos, glyph)) = edge_indicator {
+                    if pos == indicator_pos {
+                        ch = glyph.chars().next().unwrap();
+                        color = Color::White;
                         modifier = Modifier::BOLD;
                     }
                 }
@@ -359,5 +450,187 @@ impl<'a> Widget for CourseView<'a> {
                 }
             }
         }
+    }
+}
+
+/// Terrain "dominant" d'un bloc de cases `[x0,x1) x [y0,y1)`, pour la vue
+/// d'ensemble dézoomée (`render_overview`) : priorité aux repères qui ne
+/// doivent jamais disparaître même minoritaires dans un bloc (tee/trou),
+/// puis aux dangers (eau/bunker/arbre/pénalité), puis au terrain "normal"
+/// (green/rough/fairway), hors-limites en dernier recours. Une simple
+/// majorité aurait pu diluer un tee/trou isolé au milieu d'un grand bloc de
+/// fairway, le faisant disparaître de la vue d'ensemble.
+fn dominant_terrain(hole: &Hole, x0: usize, y0: usize, x1: usize, y1: usize) -> TerrainKind {
+    const PRIORITY: [TerrainKind; 10] = [
+        TerrainKind::Tee,
+        TerrainKind::Hole,
+        TerrainKind::Water,
+        TerrainKind::Bunker,
+        TerrainKind::Tree,
+        TerrainKind::PenaltyZone,
+        TerrainKind::Green,
+        TerrainKind::Rough,
+        TerrainKind::Fairway,
+        TerrainKind::OutOfBounds,
+    ];
+    let mut present = [false; PRIORITY.len()];
+    for y in y0..y1 {
+        for x in x0..x1 {
+            if let Some(terrain) = hole.terrain_at(Pos { x, y }) {
+                if let Some(idx) = PRIORITY.iter().position(|k| *k == terrain) {
+                    present[idx] = true;
+                }
+            }
+        }
+    }
+    PRIORITY
+        .iter()
+        .zip(present.iter())
+        .find(|(_, found)| **found)
+        .map(|(kind, _)| *kind)
+        .unwrap_or(TerrainKind::OutOfBounds)
+}
+
+/// Vue d'ensemble dézoomée (`ZoomLevel::Out`) : montre tout le trou (canevas
+/// complet) réduit pour tenir dans la zone disponible, chaque caractère
+/// affiché représentant un bloc de plusieurs cases de la grille réelle
+/// plutôt qu'une seule. Le facteur de réduction est calculé pour que tout
+/// tienne (le plus petit entier tel que la grille entière rentre dans
+/// `inner`), pas une valeur fixe. Simplifiée à dessein par rapport au rendu
+/// normal : ni aperçu de coup, ni rappel de trajectoire, seulement le
+/// terrain et la balle — cette vue sert à se repérer d'un coup d'œil, pas à
+/// viser précisément.
+fn render_overview(hole: &Hole, ball: Pos, inner: Rect, buf: &mut Buffer) {
+    let grid_h = hole.tiles.len();
+    let grid_w = hole.tiles.first().map(|r| r.len()).unwrap_or(0);
+    if grid_w == 0 || grid_h == 0 || inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let factor = ((grid_w as f32 / inner.width as f32).ceil())
+        .max((grid_h as f32 / inner.height as f32).ceil())
+        .max(1.0) as usize;
+
+    let display_w = (grid_w + factor - 1) / factor;
+    let display_h = (grid_h + factor - 1) / factor;
+    let margin_x = (inner.width - display_w as u16) / 2;
+    let margin_y = (inner.height - display_h as u16) / 2;
+
+    for row in 0..display_h {
+        for col in 0..display_w {
+            let x0 = col * factor;
+            let y0 = row * factor;
+            let x1 = (x0 + factor).min(grid_w);
+            let y1 = (y0 + factor).min(grid_h);
+
+            let ball_here = ball.x >= x0 && ball.x < x1 && ball.y >= y0 && ball.y < y1;
+            let (ch, color) = if ball_here {
+                ('●', Color::Red)
+            } else {
+                terrain_style(dominant_terrain(hole, x0, y0, x1, y1))
+            };
+
+            let x = inner.x + margin_x + col as u16;
+            let y = inner.y + margin_y + row as u16;
+            if x < inner.x + inner.width && y < inner.y + inner.height {
+                buf.get_mut(x, y).set_char(ch).set_style(Style::default().fg(color));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::HoleMeta;
+
+    fn test_hole(tiles: Vec<Vec<TerrainKind>>) -> Hole {
+        let height = tiles.len();
+        let width = tiles.first().map(|r| r.len()).unwrap_or(0);
+        Hole {
+            meta: HoleMeta { name: "Test".to_string(), par: 4, description: None, width: None, height: None },
+            tiles,
+            tee: Pos { x: 0, y: 0 },
+            hole_pos: Pos { x: width.saturating_sub(1), y: height.saturating_sub(1) },
+        }
+    }
+
+    #[test]
+    fn dominant_terrain_prefers_tee_and_hole_over_everything_else() {
+        let hole = test_hole(vec![
+            vec![TerrainKind::Fairway, TerrainKind::Fairway, TerrainKind::Tee],
+            vec![TerrainKind::Fairway, TerrainKind::Fairway, TerrainKind::Fairway],
+        ]);
+        assert_eq!(dominant_terrain(&hole, 0, 0, 3, 2), TerrainKind::Tee);
+    }
+
+    #[test]
+    fn dominant_terrain_prefers_hazards_over_plain_terrain() {
+        let hole = test_hole(vec![
+            vec![TerrainKind::Fairway, TerrainKind::Fairway, TerrainKind::Fairway],
+            vec![TerrainKind::Fairway, TerrainKind::Bunker, TerrainKind::Fairway],
+        ]);
+        assert_eq!(dominant_terrain(&hole, 0, 0, 3, 2), TerrainKind::Bunker);
+    }
+
+    #[test]
+    fn dominant_terrain_falls_back_to_out_of_bounds_when_the_block_is_empty_of_anything_else() {
+        let hole = test_hole(vec![vec![TerrainKind::OutOfBounds; 2]; 2]);
+        assert_eq!(dominant_terrain(&hole, 0, 0, 2, 2), TerrainKind::OutOfBounds);
+    }
+
+    #[test]
+    fn dominant_terrain_picks_the_majority_terrain_when_no_priority_kind_is_present() {
+        let hole = test_hole(vec![
+            vec![TerrainKind::Rough, TerrainKind::Rough],
+            vec![TerrainKind::Fairway, TerrainKind::Rough],
+        ]);
+        // Le rough est présent, la présence l'emporte même minoritaire —
+        // seule sa présence compte, pas le décompte exact.
+        assert_eq!(dominant_terrain(&hole, 0, 0, 2, 2), TerrainKind::Rough);
+    }
+
+    #[test]
+    fn edge_indicator_pos_projects_towards_the_right_edge_when_target_is_due_east() {
+        let from = Pos { x: 10, y: 10 };
+        let to = Pos { x: 50, y: 10 };
+        let pos = edge_indicator_pos(from, to, 5, 20, 5, 20);
+        assert_eq!(pos, Pos { x: 20, y: 10 }, "droit à l'est : doit toucher le bord droit, même hauteur");
+    }
+
+    #[test]
+    fn edge_indicator_pos_projects_towards_the_bottom_edge_when_target_is_due_south() {
+        let from = Pos { x: 10, y: 10 };
+        let to = Pos { x: 10, y: 50 };
+        let pos = edge_indicator_pos(from, to, 5, 20, 5, 20);
+        assert_eq!(pos, Pos { x: 10, y: 20 }, "droit au sud : doit toucher le bord bas, même colonne");
+    }
+
+    #[test]
+    fn edge_indicator_pos_hits_a_corner_on_an_exact_diagonal() {
+        let from = Pos { x: 10, y: 10 };
+        let to = Pos { x: 50, y: 50 };
+        let pos = edge_indicator_pos(from, to, 5, 20, 5, 20);
+        assert_eq!(pos, Pos { x: 20, y: 20 }, "diagonale exacte : doit toucher le coin bas-droit");
+    }
+
+    #[test]
+    fn edge_indicator_pos_stays_closer_to_the_edge_matching_the_shallower_slope() {
+        // Direction majoritairement horizontale (peu de dy pour beaucoup de
+        // dx) : doit toucher le bord droit avant le bord bas, avec un y
+        // proche mais pas égal à celui du bord bas.
+        let from = Pos { x: 10, y: 10 };
+        let to = Pos { x: 50, y: 15 };
+        let pos = edge_indicator_pos(from, to, 5, 20, 5, 20);
+        assert_eq!(pos.x, 20, "doit toucher le bord droit en premier");
+        assert!(pos.y > 10 && pos.y < 20, "y doit avoir légèrement bougé sans atteindre le bord bas");
+    }
+
+    #[test]
+    fn edge_indicator_pos_clamps_within_bounds_when_the_ball_is_already_on_the_edge() {
+        let from = Pos { x: 20, y: 10 };
+        let to = Pos { x: 50, y: 10 };
+        let pos = edge_indicator_pos(from, to, 5, 20, 5, 20);
+        assert_eq!(pos, Pos { x: 20, y: 10 }, "déjà sur le bord : la flèche reste sur place");
     }
 }

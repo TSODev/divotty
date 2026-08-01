@@ -463,13 +463,27 @@ Fait et testé :
   différent par case). Vérifié en tmux : grille 1815 cases comblée en un
   appui sur `C` puis `.`, `U` revient entièrement en un seul appui sans
   toucher aux cases peintes avant ou après le comblement.
+- Vue d'ensemble dézoomée + indicateur de direction hors-champ (voir
+  `ROADMAP.md` pour le détail, signalé par un joueur sur un trou par 5 très
+  vertical où départ et arrivée ne tenaient pas dans un même écran) :
+  `ZoomLevel` (`render.rs`) remplace le booléen `zoomed` par trois niveaux
+  cyclés avec la même touche `Z` — Normal → Avant (inchangé, `x3`) →
+  Arrière (nouveau, `render_overview()`, montre tout le canevas 100x60
+  réduit pour tenir dans l'espace disponible, terrain par bloc choisi par
+  priorité — `dominant_terrain()` — pour qu'un tee/trou isolé ne
+  disparaisse jamais) → retour à Normal. En zoom normal uniquement, si le
+  trou n'est pas dans la fenêtre visible, une flèche de boussole
+  (`compass_arrow`, déjà utilisée pour la visée) marque la case de bord la
+  plus proche de sa direction réelle, calculée par projection du rayon
+  balle→trou (`edge_indicator_pos()`) plutôt qu'un angle collé à un coin.
+  Testé (fonctions pures) et vérifié en tmux.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
   `adjust_die_strength`...) a maintenant 63 tests unitaires dans
-  `src/main.rs` (116 au total avec `core` et `tui`), mais rien qui simule un
+  `src/main.rs` (125 au total avec `core` et `tui`), mais rien qui simule un
   vrai terminal/`crossterm`.
 
 ## Publication crates.io

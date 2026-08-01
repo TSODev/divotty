@@ -151,6 +151,43 @@
       toujours au plus un point par case entière, donc 0-1 case marquée sur
       un putt de 1-2 cases — mais cette case unique se lit désormais comme
       un vrai tronçon de trajectoire plutôt qu'un point isolé.
+- [x] Vue d'ensemble dézoomée + indicateur de direction hors-champ
+      (signalé : un trou très allongé, par ex. par 5 sur 42 lignes de haut,
+      peut avoir son départ et son arrivée trop éloignés pour tenir dans un
+      seul écran, même en plein écran — le `Viewport` suit toujours la
+      balle, jamais tout le trou). `ZoomLevel` (`render.rs`) remplace le
+      booléen `zoomed` par trois niveaux cyclés avec la même touche `Z` :
+      Normal → Avant (comportement `x3` existant, inchangé) → Arrière
+      (nouveau) → retour à Normal.
+      - **Vue arrière** (`render_overview()`) : montre tout le canevas
+        100x60 d'un coup, réduit pour tenir dans la zone disponible — le
+        facteur de réduction est calculé pour que tout tienne (le plus
+        petit entier tel que la grille rentre dans l'espace donné), pas une
+        valeur fixe. Chaque caractère affiché représente alors un bloc de
+        plusieurs cases réelles ; le terrain retenu pour un bloc suit un
+        ordre de priorité (`dominant_terrain()`) plutôt qu'une simple
+        majorité, pour qu'un tee/trou isolé au milieu d'un grand bloc de
+        fairway ne disparaisse jamais de la vue d'ensemble : tee/trou en
+        premier, puis les dangers (eau/bunker/arbre/pénalité), puis le
+        terrain "normal" (green/rough/fairway), hors-limites en dernier
+        recours. Volontairement simplifiée par rapport au rendu normal : ni
+        aperçu de coup, ni rappel de trajectoire — cette vue sert à se
+        repérer d'un coup d'œil, pas à viser précisément.
+      - **Indicateur hors-champ**, en zoom normal uniquement (en vue
+        d'ensemble, le trou est toujours visible ; pas ajouté au zoom avant,
+        qui réduit la zone visible plutôt que de l'agrandir) : si le trou
+        n'est pas dans la fenêtre actuellement affichée, une flèche de
+        boussole (réutilise `compass_arrow`/`format.rs`, déjà utilisée pour
+        la flèche de visée) prend la place de la case de bord la plus
+        proche de sa direction réelle. Calculée par projection du rayon
+        balle→trou jusqu'à la première bordure rencontrée
+        (`edge_indicator_pos()`) plutôt qu'un simple angle collé à un coin,
+        pour qu'un trou légèrement au sud-est finisse près du bord droit et
+        pas pile au coin. Testé (`dominant_terrain`/`edge_indicator_pos`,
+        fonctions pures) et vérifié en tmux : trou par 5 très vertical,
+        indicateur `↓` visible en zoom normal quand le trou dépasse
+        l'écran, vue d'ensemble montrant tee et trou simultanément après un
+        second `Z`.
 - [x] Force du coup réglable par le joueur (`+`/`-`, 3 à 6, 6 = pleine
       puissance) : le tirage reste uniforme mais borné par le plafond
       choisi (`gen_range(1..=die_strength)`), pour éviter qu'un gros dé

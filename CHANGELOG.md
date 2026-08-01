@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Z` now cycles through three zoom levels instead of just toggling one:
+  Normal, the existing zoomed-in view, and a new zoomed-out overview that
+  shrinks the whole hole to fit on screen at once. Handy for a long or
+  very vertical hole where the tee and the cup are too far apart to both
+  show up on a normal screen — the map always follows the ball, so without
+  an overview you'd only ever see whichever end is close by. In the
+  overview, tee and hole markers are never lost even when several grid
+  cells collapse into one character, since they're prioritized over
+  background terrain.
+- In the normal (non-zoomed) view, when the hole itself is outside the
+  visible area, a compass arrow now appears on the nearest edge pointing
+  in its real direction — no more guessing which way to look when a shot
+  travels further than the screen can currently show.
 - The hole builder can now flood-fill every remaining out-of-bounds cell
   with a terrain of your choice: press `C`, then the terrain key you want
   to use. Already-painted cells are left untouched, so it's safe to use

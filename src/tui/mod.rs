@@ -27,6 +27,6 @@ pub use course_builder::{
 };
 pub use lang::Lang;
 pub use menu::CourseMenuState;
-pub use render::{CourseView, Viewport};
+pub use render::{CourseView, Viewport, ZoomLevel};
 pub use scorecard::ScorecardView;
 pub use sidebar::SidebarState;
