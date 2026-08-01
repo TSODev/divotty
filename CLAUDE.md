@@ -496,13 +496,31 @@ Fait et testé :
   parcours entier, donc collision = refus avec message plutôt qu'une
   confirmation. Testé et vérifié en tmux (trou et parcours de test tous
   deux renommés avec succès, contenu préservé).
+- Animation du déplacement de la balle (voir `ROADMAP.md` pour le détail) :
+  un coup joué n'applique plus son résultat (score, dernier coup,
+  historique) immédiatement — `GameState::play_shot` calcule le résultat
+  tout de suite (déterministe comme avant) mais le stocke en attente
+  (`animating: Option<ShotAnimation>`) le temps que la balle avance
+  visuellement le long de la trajectoire réelle (`shot_animation_path`,
+  positions plafonnées à `SHOT_ANIMATION_STEPS = 10` pour qu'un long drive
+  n'anime pas plus longtemps qu'un petit coup). `sample_line`
+  (échantillonnage d'une ligne en cases entières, jusque-là privé à
+  `tui/render.rs` pour le pointillé de visée) est remonté dans
+  `core/shot.rs` — pure géométrie sur `Pos`, partagée entre affichage et
+  logique de jeu. Cadence d'environ 200ms/position, gouvernée par le délai
+  d'attente déjà existant de la boucle de jeu plutôt qu'une minuterie
+  séparée. N'importe quelle touche pendant l'animation l'accélère jusqu'à
+  la fin ; viser/changer de club/sauvegarder restent désactivés pendant ce
+  temps, et l'aperçu de visée disparaît (le résultat est déjà décidé).
+  Testé et vérifié en tmux (mouvement visible et régulier, accélération
+  immédiate sur une touche).
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 66 tests unitaires dans
-  `src/main.rs` (128 au total avec `core` et `tui`), mais rien qui simule un
+  `adjust_die_strength`...) a maintenant 73 tests unitaires dans
+  `src/main.rs` (135 au total avec `core` et `tui`), mais rien qui simule un
   vrai terminal/`crossterm`.
 
 ## Publication crates.io

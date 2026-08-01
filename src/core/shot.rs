@@ -87,6 +87,28 @@ impl Direction {
     }
 }
 
+/// Points échantillonnés sur le segment `from`→`to`, une case tous les
+/// (grosso modo) 1 cran, sans inclure `from` ni `to` eux-mêmes — partagé
+/// entre le guide de visée/rappel de trajectoire (`tui/render.rs`) et
+/// l'animation du déplacement de la balle (`GameState::play_shot` dans
+/// `main.rs`), d'où sa place ici plutôt que dans `tui` : c'est une pure
+/// question de géométrie sur `Pos`, sans dépendance à `ratatui`.
+pub fn sample_line(from: Pos, to: Pos) -> Vec<Pos> {
+    let dx = to.x as f32 - from.x as f32;
+    let dy = to.y as f32 - from.y as f32;
+    let length = (dx * dx + dy * dy).sqrt();
+    let steps = length.ceil().max(1.0) as usize;
+    (1..steps)
+        .map(|step| {
+            let t = step as f32 / steps as f32;
+            Pos {
+                x: (from.x as f32 + dx * t).round() as usize,
+                y: (from.y as f32 + dy * t).round() as usize,
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Shot {
     pub club: Club,
@@ -129,7 +151,7 @@ fn wind_push(club: Club, effective_distance: f32, wind: Wind) -> (f32, f32) {
 }
 
 /// Résultat de la résolution d'un coup.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ShotResult {
     pub landing: Pos,
     pub landing_terrain: TerrainKind,

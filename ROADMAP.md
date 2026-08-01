@@ -258,7 +258,43 @@
       afficher où la balle a été droppée plutôt qu'un message générique
       ("Dropped · the fairway"/"Droppée · le fairway"), formulé court car
       le panneau ne fait que ~24 caractères utiles.
-- [ ] Animation simple du déplacement de la balle (interpolation position par position)
+- [x] Animation simple du déplacement de la balle (interpolation position par
+      position) — le résultat d'un coup (dé + résolution) reste calculé
+      immédiatement et de façon déterministe comme avant, mais n'est plus
+      appliqué à `GameState` (score, dernier coup, historique) tant que la
+      balle n'est pas arrivée visuellement à destination.
+      `GameState::play_shot` construit la trajectoire à afficher
+      (`shot_animation_path`, positions intermédiaires jusqu'à
+      l'atterrissage) et la stocke en attente (`animating: Option<
+      ShotAnimation>`) plutôt que de faire sauter la balle directement.
+      `sample_line` (échantillonnage d'une ligne en cases entières), utilisé
+      jusque-là seulement par le pointillé de visée/rappel de trajectoire
+      dans `tui/render.rs`, est remonté dans `core/shot.rs` (pure géométrie
+      sur `Pos`, aucune dépendance à `ratatui` — partagé entre affichage et
+      logique de jeu). Nombre d'étapes **plafonné**
+      (`SHOT_ANIMATION_STEPS = 10`) plutôt qu'une vitesse fixe par case,
+      pour qu'un long drive ne prenne pas nettement plus de temps à
+      s'afficher qu'un petit coup d'approche — repéré comme risque après
+      signalement explicite ("il faut que le déplacement soit visible,
+      donc pas 'trop' rapide" : la cadence retenue est d'environ 200ms par
+      position, gouvernée par le délai d'attente déjà existant de la
+      boucle de jeu (`event::poll(200ms)`) plutôt qu'une minuterie séparée
+      — chaque itération sans touche pressée avance d'une position).
+      N'importe quelle touche pendant l'animation l'accélère jusqu'à la
+      fin plutôt que de forcer à attendre le trajet complet à chaque coup ;
+      viser/changer de club/sauvegarder restent désactivés pendant ce
+      temps (même principe que l'état "trou terminé"), et l'aperçu de
+      visée disparaît dès le départ du coup (le résultat est déjà décidé,
+      un aperçu hypothétique en même temps serait trompeur). `finished()`
+      reste correct sans changement : `last_shot` n'étant mis à jour qu'à
+      la fin de l'animation, l'état "trou terminé" ne peut pas apparaître
+      avant que le résultat (y compris un coup dans le trou) soit
+      réellement révélé. Testé (démarrage sans application immédiate,
+      avancée pas à pas, application automatique en fin de trajectoire,
+      accélération manuelle, plafond de positions toujours respecté et se
+      terminant sur l'atterrissage réel) et vérifié en tmux (mouvement
+      visible case par case à un rythme régulier, accélération immédiate
+      sur une touche, score/dernier coup appliqués seulement à la fin).
 - [ ] Panneau "Dernier coup" enrichi : distance déduite + club utilisé, en
       plus du dé déjà affiché (ex. `Driver — Dé: 5 — Distance: 18 — Balle
       sur le fairway` plutôt que les infos séparées d'aujourd'hui).

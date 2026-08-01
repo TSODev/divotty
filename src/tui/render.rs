@@ -1,4 +1,4 @@
-use crate::core::{Direction, Hole, Pos, ShotPreview, TerrainKind};
+use crate::core::{sample_line, Direction, Hole, Pos, ShotPreview, TerrainKind};
 use crate::tui::format::{compass_arrow, compass_sector};
 use ratatui::{
     buffer::Buffer,
@@ -99,24 +99,6 @@ fn cell_distance(a: Pos, b: Pos) -> f32 {
     let dx = a.x as f32 - b.x as f32;
     let dy = a.y as f32 - b.y as f32;
     (dx * dx + dy * dy).sqrt()
-}
-
-/// Points échantillonnés sur le segment `from`→`to`, une case tous les
-/// (grosso modo) 1 cran, pour tracer un guide de trajectoire.
-fn sample_line(from: Pos, to: Pos) -> Vec<Pos> {
-    let dx = to.x as f32 - from.x as f32;
-    let dy = to.y as f32 - from.y as f32;
-    let length = (dx * dx + dy * dy).sqrt();
-    let steps = length.ceil().max(1.0) as usize;
-    (1..steps)
-        .map(|step| {
-            let t = step as f32 / steps as f32;
-            Pos {
-                x: (from.x as f32 + dx * t).round() as usize,
-                y: (from.y as f32 + dy * t).round() as usize,
-            }
-        })
-        .collect()
 }
 
 /// Case (entière) où placer une flèche indiquant la direction de `to`

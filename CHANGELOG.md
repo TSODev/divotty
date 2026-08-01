@@ -115,6 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ("File name:", "New name:") instead of showing a bare cursor.
 
 ### Changed
+- Playing a shot no longer teleports the ball straight to where it lands:
+  it now visibly travels there, one grid cell every couple hundred
+  milliseconds. A long drive doesn't take proportionally longer to watch
+  than a short putt — the number of steps shown is capped regardless of
+  distance. Aiming, changing club, and saving are disabled while the ball
+  is still moving, and pressing any key fast-forwards straight to the
+  result instead of making you wait out the full animation every time.
 - Courses, save files, and the hole builder's library no longer depend on
   which directory you happen to launch `divotty` from. If `./courses`
   exists next to where you run it, behavior is unchanged (the usual

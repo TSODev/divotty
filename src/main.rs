@@ -8,8 +8,8 @@ use crossterm::{
     execute,
 };
 use crate::core::{
-    preview_shot, resolve_shot, Club, Course, CourseIndex, Direction, Hole, HoleMeta, HoleScore,
-    Pos, Scorecard, Shot, ShotResult, TerrainKind, Wind, COURSE_HEIGHT, COURSE_WIDTH,
+    preview_shot, resolve_shot, sample_line, Club, Course, CourseIndex, Direction, Hole, HoleMeta,
+    HoleScore, Pos, Scorecard, Shot, ShotResult, TerrainKind, Wind, COURSE_HEIGHT, COURSE_WIDTH,
 };
 use crate::tui::{
     BuilderMode, BuilderOrientation, BuilderSetupView, BuilderSidebarView, BuilderView,
@@ -250,6 +250,7 @@ fn load_game(lang: Lang, data_root: &Path) -> Result<GameState> {
         just_saved: false,
         quit_confirm: false,
         zoom: ZoomLevel::default(),
+        animating: None,
     })
 }
 
@@ -293,6 +294,51 @@ struct GameState {
     /// Niveau de zoom de la carte, cyclé par le joueur (touche `Z`) —
     /// normal par défaut.
     zoom: ZoomLevel,
+    /// Animation d'un coup en cours de résolution — la balle avance
+    /// visuellement le long de la trajectoire réelle avant que le résultat
+    /// (score, dernier coup, historique) ne soit appliqué à l'état du jeu.
+    /// `None` hors animation (visée/club/rejouer un coup autorisés).
+    /// Jamais persisté dans `save.yaml` : reprendre une sauvegarde ne peut
+    /// pas tomber en plein milieu d'une animation.
+    animating: Option<ShotAnimation>,
+}
+
+/// État d'un coup en cours d'affichage (voir `GameState::animating`) : la
+/// trajectoire à parcourir (positions intermédiaires jusqu'à l'atterrissage
+/// inclus, voir `shot_animation_path`) et le résultat déjà déterminé (dé,
+/// `ShotResult`) mais pas encore appliqué — appliqué seulement une fois
+/// l'animation terminée (`GameState::finish_shot_animation`), pour que le
+/// score/dernier coup n'apparaissent pas avant que la balle y soit
+/// visuellement arrivée.
+struct ShotAnimation {
+    path: Vec<Pos>,
+    /// Index dans `path` de la prochaine position à révéler.
+    step: usize,
+    die: u8,
+    result: ShotResult,
+}
+
+/// Nombre de positions affichées au cours de l'animation d'un coup, quelle
+/// que soit la distance réelle parcourue — un plafond plutôt qu'une
+/// vitesse fixe par case, pour qu'un long drive ne prenne pas nettement
+/// plus de temps à s'afficher qu'un petit coup d'approche.
+const SHOT_ANIMATION_STEPS: usize = 10;
+
+/// Construit la trajectoire affichée pendant l'animation d'un coup : au
+/// plus `SHOT_ANIMATION_STEPS` positions de `from` à `to` inclus (`to`
+/// toujours la dernière). `sample_line` (core) donne une position par case
+/// parcourue ; au-delà du plafond, on n'en garde qu'un sous-ensemble
+/// régulièrement espacé plutôt que de les afficher toutes.
+fn shot_animation_path(from: Pos, to: Pos) -> Vec<Pos> {
+    let mut full = sample_line(from, to);
+    full.push(to);
+    if full.len() <= SHOT_ANIMATION_STEPS {
+        return full;
+    }
+    let last_index = full.len() - 1;
+    (0..SHOT_ANIMATION_STEPS)
+        .map(|i| full[i * last_index / (SHOT_ANIMATION_STEPS - 1)])
+        .collect()
 }
 
 impl GameState {
@@ -323,6 +369,7 @@ impl GameState {
             just_saved: false,
             quit_confirm: false,
             zoom: ZoomLevel::default(),
+            animating: None,
         }
     }
 
@@ -330,6 +377,13 @@ impl GameState {
         &self.holes[self.hole_index]
     }
 
+    /// Tire le dé et résout le coup immédiatement (déterministe une fois le
+    /// dé lancé), mais n'applique pas encore le résultat à l'état du jeu —
+    /// démarre plutôt son animation (`animating`, voir `ShotAnimation`).
+    /// Le résultat n'est appliqué (score, dernier coup, historique) qu'une
+    /// fois l'animation terminée (`finish_shot_animation`), pour que la
+    /// balle affichée avance visuellement le long de la trajectoire réelle
+    /// plutôt que de sauter directement à l'atterrissage.
     fn play_shot(&mut self) {
         let die: u8 = rand::thread_rng().gen_range(1..=self.die_strength);
         let shot = Shot {
@@ -339,13 +393,38 @@ impl GameState {
         };
         let mut rng = rand::thread_rng();
         let result = resolve_shot(self.current_hole(), self.ball, shot, self.wind, &mut rng);
-        self.strokes += 1 + result.penalty_strokes;
-        self.ball = result.landing;
+        let path = shot_animation_path(self.ball, result.landing);
+        self.animating = Some(ShotAnimation { path, step: 0, die, result });
+        self.just_saved = false;
+    }
+
+    /// Révèle la prochaine position de la trajectoire en cours d'animation
+    /// (voir `animating`), ou applique le résultat si elle est déjà
+    /// entièrement parcourue — appelée à chaque tick de la boucle de jeu
+    /// tant qu'une animation est en cours (`run_loop`).
+    fn advance_shot_animation(&mut self) {
+        let Some(anim) = &mut self.animating else { return };
+        if anim.step >= anim.path.len() {
+            self.finish_shot_animation();
+            return;
+        }
+        self.ball = anim.path[anim.step];
+        anim.step += 1;
+    }
+
+    /// Termine l'animation en cours immédiatement, en appliquant le
+    /// résultat déjà déterminé (score, dernier coup, historique, visée vers
+    /// le trou) — que la trajectoire ait été entièrement parcourue
+    /// (`advance_shot_animation`) ou que le joueur l'ait accélérée jusqu'à
+    /// la fin en appuyant sur une touche pendant qu'elle jouait.
+    fn finish_shot_animation(&mut self) {
+        let Some(anim) = self.animating.take() else { return };
+        self.strokes += 1 + anim.result.penalty_strokes;
+        self.ball = anim.result.landing;
         self.shot_history.push(self.ball);
         self.aim = Direction::towards(self.ball, self.current_hole().hole_pos);
-        self.last_die = Some(die);
-        self.last_shot = Some(result);
-        self.just_saved = false;
+        self.last_die = Some(anim.die);
+        self.last_shot = Some(anim.result);
     }
 
     fn nudge_aim(&mut self, angle_delta: f32) {
@@ -685,7 +764,10 @@ fn run_loop<B: ratatui::backend::Backend>(
             // Une fois le trou fini, plus rien à viser : l'aperçu de coup
             // cède la place au rappel du parcours joué (voir
             // `GameState::shot_history` / `CourseView::path`).
-            let preview = if finished {
+            // Pas d'aperçu de visée pendant qu'un coup s'anime : le
+            // résultat est déjà déterminé, montrer un aperçu hypothétique
+            // en même temps que la balle réelle en vol serait trompeur.
+            let preview = if finished || state.animating.is_some() {
                 None
             } else {
                 Some(preview_shot(
@@ -713,6 +795,23 @@ fn run_loop<B: ratatui::backend::Backend>(
                 columns[1],
             );
         })?;
+
+        // Un coup est en cours d'animation : la balle avance seule, une
+        // position par tick d'attente (~200ms, ci-dessous) tant qu'aucune
+        // touche n'arrive — n'importe quelle touche accélère plutôt
+        // jusqu'à la fin plutôt que de forcer à attendre le trajet complet
+        // à chaque coup. Aucune autre action (viser, changer de club,
+        // sauvegarder...) n'est traitée pendant ce temps.
+        if state.animating.is_some() {
+            if event::poll(Duration::from_millis(200))? {
+                if let Event::Key(_) = event::read()? {
+                    state.finish_shot_animation();
+                }
+            } else {
+                state.advance_shot_animation();
+            }
+            continue;
+        }
 
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
@@ -2291,6 +2390,16 @@ mod tests {
         GameState::new(None, fallback_course().unwrap(), Lang::default())
     }
 
+    /// Joue un coup et applique son résultat immédiatement (comme si le
+    /// joueur avait accéléré l'animation jusqu'à la fin) — la plupart des
+    /// tests ne s'intéressent qu'au résultat final, pas au déroulé
+    /// case-par-case de `GameState::animating`, qui a ses propres tests
+    /// dédiés plus bas.
+    fn play_shot_now(state: &mut GameState) {
+        state.play_shot();
+        state.finish_shot_animation();
+    }
+
     /// Parcours de test à 2 trous (pars différents), pour tester
     /// l'enchaînement (`advance_hole`) sans dépendre d'un fichier sur disque.
     fn two_hole_course() -> Course {
@@ -2389,7 +2498,7 @@ mod tests {
         assert_eq!(state.strokes, 0);
         assert!(state.last_shot.is_none());
 
-        state.play_shot();
+        play_shot_now(&mut state);
 
         assert!(state.strokes >= 1, "au moins un coup doit être compté");
         assert!(state.last_die.is_some());
@@ -2402,11 +2511,11 @@ mod tests {
         let tee = state.current_hole().tee;
         assert_eq!(state.shot_history, vec![tee]);
 
-        state.play_shot();
+        play_shot_now(&mut state);
         assert_eq!(state.shot_history.len(), 2);
         assert_eq!(*state.shot_history.last().unwrap(), state.ball);
 
-        state.play_shot();
+        play_shot_now(&mut state);
         assert_eq!(state.shot_history.len(), 3);
         assert_eq!(*state.shot_history.last().unwrap(), state.ball);
     }
@@ -2415,13 +2524,13 @@ mod tests {
     fn shot_history_resets_on_restart_and_advance() {
         let mut state = two_hole_test_state();
         let tee = state.current_hole().tee;
-        state.play_shot();
+        play_shot_now(&mut state);
         assert!(state.shot_history.len() > 1);
 
         state.restart_hole();
         assert_eq!(state.shot_history, vec![tee]);
 
-        state.play_shot();
+        play_shot_now(&mut state);
         assert!(state.shot_history.len() > 1);
 
         state.advance_hole();
@@ -2456,7 +2565,7 @@ mod tests {
     #[test]
     fn restart_hole_resets_progress_but_keeps_the_hole() {
         let mut state = test_state();
-        state.play_shot();
+        play_shot_now(&mut state);
         state.cycle_club();
         let tee = state.current_hole().tee;
 
@@ -2474,7 +2583,7 @@ mod tests {
     #[test]
     fn restart_hole_does_not_touch_the_scorecard() {
         let mut state = test_state();
-        state.play_shot();
+        play_shot_now(&mut state);
 
         state.restart_hole();
 
@@ -2542,13 +2651,105 @@ mod tests {
         assert_eq!(state.die_strength, DIE_STRENGTH_FLOOR);
 
         for _ in 0..20 {
-            state.play_shot();
+            play_shot_now(&mut state);
             let die = state.last_die.expect("un dé a été tiré");
             assert!(
                 die <= DIE_STRENGTH_FLOOR,
                 "le dé plafonné à {DIE_STRENGTH_FLOOR} ne doit jamais dépasser ce plafond, obtenu {die}"
             );
         }
+    }
+
+    #[test]
+    fn play_shot_starts_an_animation_without_applying_the_result_yet() {
+        let mut state = test_state();
+        let tee = state.ball;
+
+        state.play_shot();
+
+        assert!(state.animating.is_some(), "un coup joué doit démarrer une animation");
+        assert_eq!(state.strokes, 0, "le score n'est pas encore appliqué");
+        assert!(state.last_shot.is_none(), "le dernier coup n'est pas encore appliqué");
+        assert_eq!(state.shot_history, vec![tee], "l'historique n'est pas encore mis à jour");
+        assert_eq!(state.ball, tee, "la balle n'a pas encore bougé au tout premier tick");
+    }
+
+    #[test]
+    fn advance_shot_animation_moves_the_ball_one_step_at_a_time() {
+        let mut state = test_state();
+        state.play_shot();
+        let total_steps = state.animating.as_ref().unwrap().path.len();
+        assert!(total_steps > 1, "ce test suppose un coup avec plusieurs positions intermédiaires");
+
+        let first_step_pos = state.animating.as_ref().unwrap().path[0];
+        state.advance_shot_animation();
+        assert_eq!(state.ball, first_step_pos, "la balle doit être à la première position du chemin");
+        assert!(state.animating.is_some(), "l'animation continue tant que le chemin n'est pas épuisé");
+        assert!(state.last_shot.is_none(), "le résultat ne doit toujours pas être appliqué");
+    }
+
+    #[test]
+    fn advance_shot_animation_eventually_applies_the_result() {
+        let mut state = test_state();
+        state.play_shot();
+
+        for _ in 0..(SHOT_ANIMATION_STEPS + 5) {
+            state.advance_shot_animation();
+        }
+
+        assert!(state.animating.is_none(), "l'animation doit s'être terminée d'elle-même");
+        assert!(state.strokes >= 1);
+        assert!(state.last_shot.is_some());
+        assert_eq!(state.shot_history.len(), 2);
+    }
+
+    #[test]
+    fn finish_shot_animation_applies_the_result_immediately() {
+        let mut state = test_state();
+        let tee = state.ball;
+        state.play_shot();
+        let pending_result = state.animating.as_ref().unwrap().result.clone();
+
+        state.finish_shot_animation();
+
+        assert!(state.animating.is_none());
+        assert_eq!(state.strokes, 1 + pending_result.penalty_strokes);
+        assert_eq!(state.ball, pending_result.landing);
+        assert_eq!(state.shot_history, vec![tee, pending_result.landing]);
+        assert_eq!(state.last_shot, Some(pending_result));
+    }
+
+    #[test]
+    fn advance_and_finish_shot_animation_are_no_ops_without_a_pending_shot() {
+        let mut state = test_state();
+        assert!(state.animating.is_none());
+
+        state.advance_shot_animation();
+        state.finish_shot_animation();
+
+        assert!(state.animating.is_none());
+        assert_eq!(state.strokes, 0);
+        assert!(state.last_shot.is_none());
+    }
+
+    #[test]
+    fn shot_animation_path_always_ends_at_the_landing_position() {
+        let from = Pos { x: 5, y: 5 };
+        let to = Pos { x: 40, y: 30 }; // assez loin pour dépasser SHOT_ANIMATION_STEPS
+        let path = shot_animation_path(from, to);
+
+        assert!(path.len() <= SHOT_ANIMATION_STEPS);
+        assert_eq!(*path.last().unwrap(), to);
+    }
+
+    #[test]
+    fn shot_animation_path_keeps_every_position_for_a_short_shot() {
+        let from = Pos { x: 0, y: 0 };
+        let to = Pos { x: 3, y: 0 }; // bien en dessous de SHOT_ANIMATION_STEPS
+        let path = shot_animation_path(from, to);
+
+        assert_eq!(path, sample_line(from, to).into_iter().chain([to]).collect::<Vec<_>>());
+        assert_eq!(*path.last().unwrap(), to);
     }
 
     #[test]
