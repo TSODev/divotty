@@ -416,6 +416,25 @@ Fait et testé :
   Vérifié en tmux : création d'un parcours à 2 trous depuis la
   bibliothèque, réordonnancement, sauvegarde, apparition immédiate au menu,
   partie jouée jusqu'au bout sur ce parcours.
+- Alias de frappe pour le dessin de terrain, insensibles au clavier
+  (`terrain_from_builder_key` dans `main.rs`) : sur les trois claviers
+  US/UK/FR, seuls `.` (fairway) et `~` (eau) exigent une combinaison (Maj
+  sur AZERTY pour `.` ; Maj+`` ` `` sur US/UK ou AltGr+2 sur AZERTY pour
+  `~`) — tous les autres caractères de terrain sont déjà de simples
+  lettres ou un symbole accessible sans modificateur sur les trois. `.`
+  accepte donc aussi `F`/`f` (mnémotechnique universel) et `;` (touche
+  non-majusculée du même emplacement physique sur AZERTY) ; `~` accepte
+  aussi `W`/`w` et `é`/`É` (idem, touche "2" sur AZERTY). La translation
+  ne touche que la frappe interactive, vers le `TerrainKind` — jamais le
+  fichier `.course`, qui garde le même encodage canonique
+  (`TerrainKind::to_char`) quelle que soit la touche pressée, donc tous
+  les fichiers `.course` restent uniformes peu importe comment ils ont
+  été dessinés. La légende du builder (`terrain_legend_lines` dans
+  `builder.rs`) affiche ces alias entre parenthèses sur les deux entrées
+  concernées pour rester découvrable. Vérifié en tmux (via injection de
+  code hexadécimal `tmux send-keys -H`, le shell interceptant `;` et `é`
+  tapés littéralement) : `;`/`f`/`é`/`w` peignent bien fairway/eau comme
+  prévu.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion

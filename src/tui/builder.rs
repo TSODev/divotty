@@ -415,8 +415,21 @@ fn terrain_legend_lines(lang: Lang) -> Vec<Line<'static>> {
                 (c, _) => c.to_string(),
             };
             let label = if lang == Lang::En { label_en } else { label_fr };
+            // `.` et `~` sont les deux seuls caractères de terrain à exiger
+            // une combinaison (Maj/AltGr) sur au moins un des claviers
+            // US/UK/FR — le builder accepte donc des alias de frappe pour
+            // eux (voir `terrain_from_builder_key` dans `main.rs`), affichés
+            // ici entre parenthèses pour rester découvrables. La
+            // translation ne touche que la frappe : le fichier `.course`
+            // garde toujours le même encodage canonique (`.`, `~`...) quelle
+            // que soit la touche pressée.
+            let alias_suffix = match kind {
+                TerrainKind::Fairway => " (F/;)",
+                TerrainKind::Water => " (W/é)",
+                _ => "",
+            };
             Line::styled(
-                format!("{key_display} = {label}"),
+                format!("{key_display} = {label}{alias_suffix}"),
                 Style::default().fg(color).add_modifier(Modifier::BOLD),
             )
         })

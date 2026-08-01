@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never deletes its file. The course list on the main menu refreshes as
   soon as you leave the builder, so a course you just built or edited shows
   up immediately.
+- The hole builder now accepts a couple of extra keys so painting terrain
+  doesn't require an awkward key combo on every keyboard layout: `.`
+  (fairway) also accepts `F` or `;`, and `~` (water) also accepts `W` or
+  `é` — `;` and `é` specifically match the unshifted key that produces
+  `.`/`~` on a French AZERTY layout, while `F`/`W` work with no modifier
+  on any layout. This only changes what you can type; saved `.course`
+  files are unaffected and keep using the same `.`/`~` characters as
+  always. The builder's terrain legend shows the accepted aliases next to
+  the two affected entries.
 - Once you hole out, the map replaces the (now pointless) aim preview with
   a recap of the whole hole: a red ball at each intermediate stop and a
   trail of yellow balls connecting them, from tee to cup.

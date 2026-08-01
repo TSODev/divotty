@@ -849,7 +849,27 @@ const MIN_HOLE_PAR: u8 = 3;
 /// la casse (`d` comme `D` pour le tee, `t` comme `T` pour l'arbre, etc.) —
 /// seule la saisie interactive est tolérante à la casse ; le format
 /// `.course` lui-même (`TerrainKind::from_char`) reste strict, inchangé.
+/// Alias de frappe supplémentaires pour `.` (fairway) et `~` (eau) — les
+/// deux seuls caractères du format `.course` qui exigent une combinaison
+/// (Maj ou AltGr) sur au moins un des claviers US/UK/FR (tous les autres
+/// caractères de terrain sont déjà de simples lettres, ou un caractère
+/// directement accessible sans modificateur sur les trois). La translation
+/// se fait uniquement ici, vers le `TerrainKind` correspondant — jamais au
+/// niveau du fichier, qui garde le même encodage canonique
+/// (`TerrainKind::to_char`) quelle que soit la touche réellement pressée :
+/// - `;` : sur clavier AZERTY (FR), c'est la variante non-majusculée de la
+///   touche qui produit `.` avec Maj.
+/// - `é` : sur AZERTY, c'est la variante non-majusculée de la touche "2",
+///   dont AltGr donne `~`.
+/// - `F`/`W` : mnémotechniques (Fairway/Water) fonctionnant sans aucune
+///   touche de modification sur n'importe quel clavier, y compris US/UK où
+///   `é` n'est pas directement tapable.
 fn terrain_from_builder_key(c: char) -> Option<TerrainKind> {
+    match c {
+        ';' | 'f' | 'F' => return Some(TerrainKind::Fairway),
+        'é' | 'É' | 'w' | 'W' => return Some(TerrainKind::Water),
+        _ => {}
+    }
     TerrainKind::from_char(c.to_ascii_uppercase())
 }
 
@@ -2342,6 +2362,25 @@ mod tests {
     fn terrain_from_builder_key_rejects_unrecognized_chars() {
         assert_eq!(terrain_from_builder_key('q'), None);
         assert_eq!(terrain_from_builder_key('1'), None);
+    }
+
+    #[test]
+    fn terrain_from_builder_key_accepts_layout_friendly_aliases_for_fairway() {
+        // ';' : touche non-majusculée de '.' sur clavier AZERTY (FR).
+        // 'F'/'f' : mnémotechnique universel, sans combo sur aucun clavier.
+        assert_eq!(terrain_from_builder_key(';'), Some(TerrainKind::Fairway));
+        assert_eq!(terrain_from_builder_key('f'), Some(TerrainKind::Fairway));
+        assert_eq!(terrain_from_builder_key('F'), Some(TerrainKind::Fairway));
+    }
+
+    #[test]
+    fn terrain_from_builder_key_accepts_layout_friendly_aliases_for_water() {
+        // 'é'/'É' : touche non-majusculée de la touche "2" sur AZERTY (FR),
+        // dont AltGr donne '~'. 'W'/'w' : mnémotechnique universel.
+        assert_eq!(terrain_from_builder_key('é'), Some(TerrainKind::Water));
+        assert_eq!(terrain_from_builder_key('É'), Some(TerrainKind::Water));
+        assert_eq!(terrain_from_builder_key('w'), Some(TerrainKind::Water));
+        assert_eq!(terrain_from_builder_key('W'), Some(TerrainKind::Water));
     }
 
     #[test]
