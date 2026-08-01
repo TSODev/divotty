@@ -954,6 +954,18 @@ enum UndoEntry {
 /// de construire un `Hole` complet, qui exigerait un tee/trou déjà
 /// validés — et valide le résultat via `Hole::parse` avant d'écrire sur le
 /// disque : sauvegarder, c'est réussir ce parsing.
+/// Ce que la confirmation d'écrasement (`BuilderMode::ConfirmOverwrite`) doit
+/// faire une fois validée : une sauvegarde normale (`EnteringSaveName`), ou
+/// le renommage d'un fichier déjà existant (`RenamingFile`) — dans ce
+/// dernier cas, l'ancien fichier est supprimé une fois le nouveau écrit
+/// avec succès (voir `finish_rename`), contrairement à une sauvegarde qui
+/// n'affecte jamais que le fichier cible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingFileOp {
+    Save,
+    Rename,
+}
+
 struct BuilderState {
     name: String,
     par: u8,
@@ -968,6 +980,9 @@ struct BuilderState {
     /// Chemin en attente de confirmation d'écrasement
     /// (`BuilderMode::ConfirmOverwrite`) — `None` en dehors de ce mode.
     pending_save_path: Option<PathBuf>,
+    /// Action à effectuer une fois `pending_save_path` confirmé — lue
+    /// seulement en `BuilderMode::ConfirmOverwrite`.
+    pending_op: PendingFileOp,
     message: Option<String>,
     lang: Lang,
     quit_confirm: bool,
@@ -1008,6 +1023,7 @@ impl BuilderState {
             mode: BuilderMode::Drawing,
             text_input: String::new(),
             pending_save_path: None,
+            pending_op: PendingFileOp::Save,
             message: None,
             lang,
             quit_confirm: false,
@@ -1044,6 +1060,7 @@ impl BuilderState {
             mode: BuilderMode::Drawing,
             text_input: String::new(),
             pending_save_path: None,
+            pending_op: PendingFileOp::Save,
             message: None,
             lang,
             quit_confirm: false,
@@ -1506,7 +1523,22 @@ fn run_builder<B: ratatui::backend::Backend>(
                             if !trimmed.is_empty() {
                                 state.name = trimmed.to_string();
                             }
-                            state.mode = BuilderMode::Drawing;
+                            // Ce trou a déjà un fichier sur disque (chargé
+                            // en "Modifier") : propose aussi de renommer ce
+                            // fichier physique, pré-rempli avec son nom
+                            // actuel — sans fichier existant (trou neuf ou
+                            // "Dupliquer" pas encore sauvegardé), rien à
+                            // renommer, retour direct au dessin comme avant.
+                            if let Some(path) = &state.source_path {
+                                state.text_input = path
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                state.mode = BuilderMode::RenamingFile;
+                            } else {
+                                state.mode = BuilderMode::Drawing;
+                            }
                         }
                         KeyCode::Esc => state.mode = BuilderMode::Drawing,
                         KeyCode::Backspace => {
@@ -1541,6 +1573,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                                 // remplacer l'ancien). On demande plutôt
                                 // confirmation avant d'écraser.
                                 state.pending_save_path = Some(path);
+                                state.pending_op = PendingFileOp::Save;
                                 state.mode = BuilderMode::ConfirmOverwrite;
                             } else {
                                 finish_save(state, path);
@@ -1553,17 +1586,51 @@ fn run_builder<B: ratatui::backend::Backend>(
                         KeyCode::Char(c) => state.text_input.push(c),
                         _ => {}
                     },
+                    BuilderMode::RenamingFile => match key.code {
+                        KeyCode::Enter => {
+                            let trimmed_input = state.text_input.trim();
+                            if trimmed_input.is_empty() {
+                                state.mode = BuilderMode::Drawing;
+                                continue;
+                            }
+                            let base_name = sanitize_hole_filename(trimmed_input);
+                            let new_path =
+                                data_root.join(HOLE_LIBRARY_DIR).join(format!("{base_name}.course"));
+                            if state.source_path.as_ref() == Some(&new_path) {
+                                // Même nom qu'avant : rien à renommer.
+                                state.mode = BuilderMode::Drawing;
+                            } else if new_path.exists() {
+                                state.pending_save_path = Some(new_path);
+                                state.pending_op = PendingFileOp::Rename;
+                                state.mode = BuilderMode::ConfirmOverwrite;
+                            } else {
+                                finish_rename(state, new_path);
+                            }
+                        }
+                        KeyCode::Esc => state.mode = BuilderMode::Drawing,
+                        KeyCode::Backspace => {
+                            state.text_input.pop();
+                        }
+                        KeyCode::Char(c) => state.text_input.push(c),
+                        _ => {}
+                    },
                     BuilderMode::ConfirmOverwrite => match key.code {
                         KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
                             if let Some(path) = state.pending_save_path.take() {
-                                finish_save(state, path);
+                                match state.pending_op {
+                                    PendingFileOp::Save => finish_save(state, path),
+                                    PendingFileOp::Rename => finish_rename(state, path),
+                                }
                             } else {
                                 state.mode = BuilderMode::Drawing;
                             }
                         }
                         KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                             state.pending_save_path = None;
-                            state.mode = BuilderMode::EnteringSaveName;
+                            state.mode = match state.pending_op {
+                                PendingFileOp::Save => BuilderMode::EnteringSaveName,
+                                PendingFileOp::Rename => BuilderMode::RenamingFile,
+                            };
                         }
                         _ => {}
                     },
@@ -1621,6 +1688,33 @@ fn finish_save(state: &mut BuilderState, path: PathBuf) {
                     "Sauvegardé sous {} — pas encore inclus dans un parcours.",
                     path.display()
                 ),
+            });
+        }
+        Err(err) => {
+            state.message = Some(err.to_string());
+        }
+    }
+    state.mode = BuilderMode::Drawing;
+}
+
+/// Renomme le fichier de ce trou vers `new_path` — un vrai renommage, pas
+/// une duplication : écrit d'abord le nouveau fichier (même validation que
+/// `finish_save`, via `save_builder`) et ne supprime l'ancien
+/// (`source_path`) qu'une fois cette écriture réussie, jamais avant. Ainsi,
+/// si l'écriture échoue, l'ancien fichier reste intact plutôt que perdu.
+fn finish_rename(state: &mut BuilderState, new_path: PathBuf) {
+    let old_path = state.source_path.clone();
+    match save_builder(state, &new_path) {
+        Ok(()) => {
+            if let Some(old) = old_path {
+                if old != new_path {
+                    let _ = std::fs::remove_file(&old);
+                }
+            }
+            state.source_path = Some(new_path.clone());
+            state.message = Some(match state.lang {
+                Lang::En => format!("Renamed to {}.", new_path.display()),
+                Lang::Fr => format!("Renommé en {}.", new_path.display()),
             });
         }
         Err(err) => {
@@ -2104,7 +2198,75 @@ fn run_course_builder<B: ratatui::backend::Backend>(
                             if !trimmed.is_empty() {
                                 state.name = trimmed.to_string();
                             }
-                            state.mode = CourseBuilderMode::Listing;
+                            // Ce parcours a déjà un dossier sur disque :
+                            // propose aussi de le renommer, pré-rempli avec
+                            // son nom actuel — sans dossier existant
+                            // (parcours neuf pas encore sauvegardé), rien à
+                            // renommer, retour direct à la liste comme avant.
+                            if state.dir.exists() {
+                                state.text_input = state
+                                    .dir
+                                    .file_name()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                state.mode = CourseBuilderMode::RenamingFolder;
+                            } else {
+                                state.mode = CourseBuilderMode::Listing;
+                            }
+                        }
+                        KeyCode::Esc => state.mode = CourseBuilderMode::Listing,
+                        KeyCode::Backspace => {
+                            state.text_input.pop();
+                        }
+                        KeyCode::Char(c) => state.text_input.push(c),
+                        _ => {}
+                    },
+                    CourseBuilderMode::RenamingFolder => match key.code {
+                        KeyCode::Enter => {
+                            let trimmed = state.text_input.trim();
+                            if trimmed.is_empty() {
+                                state.mode = CourseBuilderMode::Listing;
+                                continue;
+                            }
+                            let slug = sanitize_hole_filename(trimmed);
+                            let new_dir = state
+                                .dir
+                                .parent()
+                                .map(|p| p.join(&slug))
+                                .unwrap_or_else(|| PathBuf::from(&slug));
+                            if new_dir == state.dir {
+                                // Même nom qu'avant : rien à renommer.
+                                state.mode = CourseBuilderMode::Listing;
+                            } else if new_dir.exists() {
+                                // Contrairement au renommage d'un trou (un
+                                // seul fichier), pas de confirmation
+                                // d'écrasement ici : un dossier de parcours
+                                // peut contenir plusieurs fichiers, et
+                                // l'écraser risquerait de détruire un autre
+                                // parcours entier. On refuse simplement,
+                                // le joueur reste en `RenamingFolder` pour
+                                // corriger le nom.
+                                state.message = Some(match state.lang {
+                                    Lang::En => format!("A folder named '{slug}' already exists."),
+                                    Lang::Fr => format!("Un dossier « {slug} » existe déjà."),
+                                });
+                            } else {
+                                match std::fs::rename(&state.dir, &new_dir) {
+                                    Ok(()) => {
+                                        state.dir = new_dir.clone();
+                                        state.message = Some(match state.lang {
+                                            Lang::En => format!("Renamed to {}.", new_dir.display()),
+                                            Lang::Fr => format!("Renommé en {}.", new_dir.display()),
+                                        });
+                                        state.mode = CourseBuilderMode::Listing;
+                                    }
+                                    Err(err) => {
+                                        state.message = Some(err.to_string());
+                                        state.mode = CourseBuilderMode::Listing;
+                                    }
+                                }
+                            }
                         }
                         KeyCode::Esc => state.mode = CourseBuilderMode::Listing,
                         KeyCode::Backspace => {
@@ -2805,6 +2967,72 @@ mod tests {
         let hole = Hole::parse(&raw).expect("un trou valide doit parser");
         assert_eq!(hole.meta.par, 3);
         assert_eq!(hole.tee, Pos { x: (COURSE_WIDTH - 5) / 2, y: (COURSE_HEIGHT - 3) / 2 + 1 });
+    }
+
+    fn small_valid_builder() -> BuilderState {
+        let mut builder = BuilderState::new(3, BuilderOrientation::Horizontal, Lang::En);
+        builder.width = 5;
+        builder.height = 3;
+        builder.tiles = vec![vec![TerrainKind::Fairway; 5]; 3];
+        builder.tiles[1][0] = TerrainKind::Tee;
+        builder.tiles[1][4] = TerrainKind::Hole;
+        builder
+    }
+
+    #[test]
+    fn finish_rename_writes_the_new_file_and_removes_the_old_one() {
+        let dir = std::env::temp_dir().join(format!("divotty_test_finish_rename_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let old_path = dir.join("old_name.course");
+        let new_path = dir.join("new_name.course");
+
+        let mut builder = small_valid_builder();
+        builder.source_path = Some(old_path.clone());
+        std::fs::write(&old_path, builder.to_course_raw()).unwrap();
+
+        finish_rename(&mut builder, new_path.clone());
+
+        assert!(new_path.exists(), "le nouveau fichier doit être créé");
+        assert!(!old_path.exists(), "l'ancien fichier doit être supprimé");
+        assert_eq!(builder.source_path, Some(new_path));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn finish_rename_to_the_same_path_does_not_delete_the_file() {
+        let dir =
+            std::env::temp_dir().join(format!("divotty_test_finish_rename_same_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("hole.course");
+
+        let mut builder = small_valid_builder();
+        builder.source_path = Some(path.clone());
+        std::fs::write(&path, builder.to_course_raw()).unwrap();
+
+        finish_rename(&mut builder, path.clone());
+
+        assert!(path.exists(), "le fichier doit toujours exister");
+        assert_eq!(builder.source_path, Some(path));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn finish_rename_works_even_without_a_prior_source_path() {
+        let dir = std::env::temp_dir()
+            .join(format!("divotty_test_finish_rename_no_source_{}", std::process::id()));
+        let new_path = dir.join("brand_new.course");
+
+        let mut builder = small_valid_builder();
+        assert!(builder.source_path.is_none());
+
+        finish_rename(&mut builder, new_path.clone());
+
+        assert!(new_path.exists());
+        assert_eq!(builder.source_path, Some(new_path));
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

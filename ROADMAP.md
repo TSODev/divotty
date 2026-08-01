@@ -356,6 +356,41 @@
       tmux (grille 1815 cases comblée en un appui, undo revient
       entièrement en un appui).
 
+      **Ajout post-v1** : renommage du fichier/dossier physique d'un trou ou
+      d'un parcours (signalé : la seule façon de renommer un fichier déjà
+      sauvegardé était de le dupliquer sous un nouveau nom puis de
+      supprimer l'ancien à la main hors du jeu). La touche `N` existante
+      (qui ne renommait jusque-là que le nom affiché dans le frontmatter,
+      `name:`) propose désormais *aussi*, quand le trou/parcours a déjà un
+      fichier/dossier sur disque, de le renommer physiquement — un vrai
+      renommage (`std::fs::rename`/copie+suppression), jamais une
+      duplication qui laisserait l'ancien traîner. Les deux changements
+      (nom affiché, nom de fichier) restent indépendants : sur un trou/
+      parcours pas encore sauvegardé, `N` ne touche toujours que l'affichage
+      comme avant, il n'y a rien à renommer.
+      - **Trou** (`BuilderMode::RenamingFile`, `finish_rename()` dans
+        `main.rs`) : après confirmation du nom affiché, si le trou a un
+        `source_path` (chargé en "Modifier"), demande le nouveau nom de
+        fichier (pré-rempli avec l'actuel). Écrit d'abord le nouveau
+        fichier (même validation que la sauvegarde normale) puis supprime
+        l'ancien seulement si l'écriture réussit — jamais l'inverse.
+        Collision avec un fichier existant : même confirmation d'écrasement
+        que la sauvegarde normale (`BuilderMode::ConfirmOverwrite`, réutilisé
+        via un nouveau champ `pending_op` qui distingue "sauvegarde" de
+        "renommage" pour savoir quoi faire une fois confirmé).
+      - **Parcours** (`CourseBuilderMode::RenamingFolder` dans
+        `course_builder.rs`) : même principe, mais **sans** option
+        d'écrasement en cas de collision — contrairement à un fichier de
+        trou, un dossier de parcours peut contenir plusieurs fichiers, et
+        l'écraser risquerait de détruire un autre parcours entier. Une
+        collision est donc simplement refusée avec un message, le joueur
+        reste dans l'écran de renommage pour corriger le nom.
+      Testé (`finish_rename`, y compris sans `source_path` préalable et
+      renommage vers le même chemin) et vérifié en tmux : trou renommé
+      (ancien fichier disparu, nouveau présent, nom affiché et nom de
+      fichier indépendants) et dossier de parcours renommé (contenu
+      préservé, `course.yaml` intact).
+
       **Alternatives envisagées et écartées** :
       - Scan/photo du canevas PDF (`tools/hole_design_canvas.pdf`) dessiné
         au stylo (une couleur par terrain), converti en `.course` par

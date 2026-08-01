@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Renaming a hole or a course used to mean duplicating it under a new name
+  and deleting the old file by hand outside the game. `N` now also offers
+  to rename the underlying file (for a hole) or folder (for a course)
+  whenever one already exists on disk — a real rename, nothing left
+  behind — right after confirming the new display name. Only kicks in once
+  something's actually been saved; on a brand-new hole or course, `N`
+  still just renames the display name as before. Renaming a course folder
+  onto an existing one is refused outright rather than offered as an
+  overwrite, since a course folder can hold several files.
 - `Z` now cycles through three zoom levels instead of just toggling one:
   Normal, the existing zoomed-in view, and a new zoomed-out overview that
   shrinks the whole hole to fit on screen at once. Handy for a long or

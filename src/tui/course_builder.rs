@@ -29,6 +29,16 @@ use std::path::{Path, PathBuf};
 pub enum CourseBuilderMode {
     Listing,
     EditingName,
+    /// Proposé juste après avoir confirmé le nom affiché (`N`) si ce
+    /// parcours a déjà un dossier sur disque : un vrai renommage du
+    /// dossier physique (`std::fs::rename`), pas une copie. `Échap` garde
+    /// le dossier sous son nom actuel — le nom affiché reste quand même
+    /// mis à jour, ces deux changements sont indépendants. Contrairement au
+    /// renommage d'un trou (un seul fichier), une collision ici est
+    /// refusée sans option d'écrasement : un dossier de parcours peut
+    /// contenir plusieurs fichiers, et l'écraser risquerait de détruire un
+    /// autre parcours entier plutôt qu'un seul fichier.
+    RenamingFolder,
 }
 
 fn hole_word(count: usize, lang: Lang) -> &'static str {
@@ -335,6 +345,18 @@ impl<'a> Widget for CourseBuilderSidebarView<'a> {
                 format!("{}_", self.text_input),
                 Style::default().fg(Color::White),
             ));
+        } else if self.mode == CourseBuilderMode::RenamingFolder {
+            controls_lines.push(Line::styled(
+                match self.lang {
+                    Lang::En => "Rename folder to:",
+                    Lang::Fr => "Renommer en :",
+                },
+                Style::default().fg(Color::Gray),
+            ));
+            controls_lines.push(Line::styled(
+                format!("{}_", self.text_input),
+                Style::default().fg(Color::White),
+            ));
         }
         let base: &str = if self.quit_confirm || self.exit_confirm {
             ""
@@ -353,6 +375,10 @@ impl<'a> Widget for CourseBuilderSidebarView<'a> {
                 CourseBuilderMode::EditingName => match self.lang {
                     Lang::En => "Enter  confirm\nEsc  cancel",
                     Lang::Fr => "Entrée  valider\nÉchap  annuler",
+                },
+                CourseBuilderMode::RenamingFolder => match self.lang {
+                    Lang::En => "Enter  confirm\nEsc  keep name",
+                    Lang::Fr => "Entrée  valider\nÉchap  garder nom",
                 },
             }
         };

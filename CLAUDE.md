@@ -477,13 +477,32 @@ Fait et testé :
   plus proche de sa direction réelle, calculée par projection du rayon
   balle→trou (`edge_indicator_pos()`) plutôt qu'un angle collé à un coin.
   Testé (fonctions pures) et vérifié en tmux.
+- Renommage du fichier/dossier physique d'un trou ou d'un parcours (voir
+  `ROADMAP.md` pour le détail) : la touche `N` existante (qui ne renommait
+  jusque-là que le nom affiché, `name:`) propose désormais aussi, quand le
+  trou/parcours a déjà un fichier/dossier sur disque, de le renommer
+  physiquement — un vrai renommage, jamais une duplication qui laisserait
+  l'ancien fichier traîner (contrairement à avant, où la seule façon de
+  renommer était de dupliquer puis supprimer l'ancien à la main hors du
+  jeu). Sur un trou/parcours pas encore sauvegardé, `N` ne touche toujours
+  que l'affichage, comme avant. Pour un trou (`BuilderMode::RenamingFile`,
+  `finish_rename()` dans `main.rs`) : écrit d'abord le nouveau fichier,
+  supprime l'ancien seulement si l'écriture réussit ; collision avec un
+  fichier existant réutilise la même confirmation d'écrasement que la
+  sauvegarde normale (`pending_op` distingue les deux cas). Pour un
+  parcours (`CourseBuilderMode::RenamingFolder`) : même principe mais sans
+  option d'écrasement en cas de collision — un dossier de parcours peut
+  contenir plusieurs fichiers, l'écraser risquerait de détruire un autre
+  parcours entier, donc collision = refus avec message plutôt qu'une
+  confirmation. Testé et vérifié en tmux (trou et parcours de test tous
+  deux renommés avec succès, contenu préservé).
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion
   clavier réelle). `GameState` (logique pure : `play_shot`, `cycle_club`,
   `nudge_aim`, `restart_hole`, `finished`, `advance_hole`,
-  `adjust_die_strength`...) a maintenant 63 tests unitaires dans
-  `src/main.rs` (125 au total avec `core` et `tui`), mais rien qui simule un
+  `adjust_die_strength`...) a maintenant 66 tests unitaires dans
+  `src/main.rs` (128 au total avec `core` et `tui`), mais rien qui simule un
   vrai terminal/`crossterm`.
 
 ## Publication crates.io

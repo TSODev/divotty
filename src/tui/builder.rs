@@ -65,6 +65,13 @@ pub enum BuilderMode {
     /// utiliser même après avoir commencé à détailler un trou. `Échap`
     /// annule sans rien changer.
     FillingBackground,
+    /// Proposé juste après avoir confirmé le nom affiché (`N`) si ce trou a
+    /// déjà un fichier sur disque (`source_path`, voir `main.rs`) : un vrai
+    /// renommage du fichier physique, pas une duplication — l'ancien nom
+    /// disparaît. `Échap` garde le fichier sous son nom actuel (le nom
+    /// affiché reste quand même mis à jour, ces deux changements sont
+    /// indépendants).
+    RenamingFile,
 }
 
 pub(crate) fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
@@ -700,6 +707,19 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                         Style::default().fg(Color::Gray),
                     ));
                 }
+                BuilderMode::RenamingFile => {
+                    controls_lines.push(Line::styled(
+                        match self.lang {
+                            Lang::En => "Rename file to:",
+                            Lang::Fr => "Renommer en :",
+                        },
+                        Style::default().fg(Color::Gray),
+                    ));
+                    controls_lines.push(Line::styled(
+                        format!("{}_", self.text_input),
+                        Style::default().fg(Color::White),
+                    ));
+                }
             }
             let base: &str = match self.mode {
                 BuilderMode::Drawing => match self.lang {
@@ -721,12 +741,16 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                     Lang::Fr => "(sans extension)\nEntrée  valider\nÉchap  annuler",
                 },
                 BuilderMode::ConfirmOverwrite => match self.lang {
-                    Lang::En => "Enter/Y  overwrite\nEsc/N  rename",
-                    Lang::Fr => "Entrée/Y  écraser\nÉchap/N  renommer",
+                    Lang::En => "Enter/Y  overwrite\nEsc/N  change name",
+                    Lang::Fr => "Entrée/Y  écraser\nÉchap/N  changer nom",
                 },
                 BuilderMode::FillingBackground => match self.lang {
                     Lang::En => "letters  choose\nEsc  cancel",
                     Lang::Fr => "lettres  choisir\nÉchap  annuler",
+                },
+                BuilderMode::RenamingFile => match self.lang {
+                    Lang::En => "(no extension)\nEnter  confirm\nEsc  keep name",
+                    Lang::Fr => "(sans extension)\nEntrée  valider\nÉchap  garder nom",
                 },
             };
             controls_lines.extend(
