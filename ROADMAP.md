@@ -457,6 +457,33 @@
       fichier indépendants) et dossier de parcours renommé (contenu
       préservé, `course.yaml` intact).
 
+      **Ajout post-v1** : mode bloc (`BuilderMode::BlockSelect`, touche `R`
+      — libre depuis le retrait de la rotation) pour peindre un rectangle
+      de terrain d'un coup plutôt que case par case, complément de "C"
+      (combler) pour des formes délimitées (bunker, green, bande de rough)
+      plutôt que tout le reste du hors-limites. Activé sur la case
+      courante (`BuilderState::block_anchor`, l'ancre), les flèches
+      déplacent le curseur qui forme le coin opposé — aperçu du rectangle
+      surligné en direct sur la carte (`BuilderView::block_anchor`,
+      fond gris foncé) — puis une touche de terrain remplit tout le
+      rectangle (`fill_block()`) et repasse en dessin normal ; `Échap`
+      annule sans rien changer. Contrairement à "C", **écrase** n'importe
+      quel terrain déjà présent dans la zone (c'est l'intérêt du mode
+      bloc), à une exception près demandée explicitement : le tee et le
+      trou ne sont jamais écrasés même s'ils tombent dans le rectangle —
+      on les place généralement en premier, les perdre en dessinant un
+      bloc par-dessus ensuite serait dommage. `UndoEntry` gagne une
+      troisième variante, `Block(Vec<(Pos, TerrainKind)>)`, qui mémorise
+      individuellement l'ancien terrain de chaque case touchée (contrairement
+      à `Fill`, qui peut supposer un simple retour au hors-limites) puisque
+      le mode bloc peut écraser absolument n'importe quel terrain —
+      annulable en un seul `U`. Testé (rectangle couvrant les deux sens de
+      coin, tee/trou jamais écrasés, aucune entrée d'annulation si rien ne
+      change, sans ancre = no-op, annulation restaurant le terrain exact
+      de chaque case) et vérifié en tmux (aperçu du rectangle visible en
+      direct, comblement respectant tee/trou, `Échap` annulant sans effet,
+      `U` restaurant tout en un appui).
+
       **Alternatives envisagées et écartées** :
       - Scan/photo du canevas PDF (`tools/hole_design_canvas.pdf`) dessiné
         au stylo (une couleur par terrain), converti en `.course` par

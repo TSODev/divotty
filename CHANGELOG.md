@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The hole builder can now paint a whole rectangle of terrain at once:
+  press `R` to anchor a block on the current cell, move the opposite
+  corner with the arrow keys (the rectangle previews live on the map),
+  then press a terrain key to fill it and jump back to normal drawing —
+  `Esc` cancels without changing anything. Unlike `C` (fill), which only
+  ever touches remaining out-of-bounds cells, a block overwrites whatever
+  terrain is already there, since that's the point of drawing one (a
+  bunker or green over an existing fairway, say) — except the tee and the
+  hole, which a block never overwrites even if they fall inside it, since
+  those are usually placed first. Undoing (`U`) reverts the whole
+  rectangle in one press, each cell restored to its own original terrain.
 - Renaming a hole or a course used to mean duplicating it under a new name
   and deleting the old file by hand outside the game. `N` now also offers
   to rename the underlying file (for a hole) or folder (for a course)

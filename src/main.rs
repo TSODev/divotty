@@ -1026,16 +1026,21 @@ fn suggested_declared_size(par: u8) -> (usize, usize) {
     (long_side, short_side)
 }
 
-/// Une entrée de la pile d'annulation (`BuilderState::undo_stack`) : soit
-/// une case peinte au clavier (`type_terrain`), soit tout un comblement de
-/// hors-limites (`fill_out_of_bounds`) — annulé en un seul `U` plutôt que
-/// case par case, ce qui serait impraticable pour une grille entière. Un
-/// `Fill` n'a besoin de mémoriser que les positions touchées, jamais leur
-/// ancien terrain : `fill_out_of_bounds` ne peint jamais que des cases qui
+/// Une entrée de la pile d'annulation (`BuilderState::undo_stack`) : une
+/// case peinte au clavier (`type_terrain`), tout un comblement de
+/// hors-limites (`fill_out_of_bounds`), ou tout un rectangle peint en mode
+/// bloc (`fill_block`) — chacun annulé en un seul `U` plutôt que case par
+/// case, ce qui serait impraticable sur une grande zone. Un `Fill` n'a
+/// besoin de mémoriser que les positions touchées, jamais leur ancien
+/// terrain : `fill_out_of_bounds` ne peint jamais que des cases qui
 /// étaient hors-limites, donc annuler revient toujours à les y reposer.
+/// `Block`, en revanche, peut écraser n'importe quel terrain existant
+/// (c'est tout l'intérêt du mode bloc), donc chaque case garde son ancien
+/// terrain individuellement pour pouvoir le restaurer exactement.
 enum UndoEntry {
     Cell(Pos, TerrainKind),
     Fill(Vec<Pos>),
+    Block(Vec<(Pos, TerrainKind)>),
 }
 
 /// État de l'éditeur de trou (voir `ROADMAP.md`, "Builder de trous"). Édite
@@ -1090,6 +1095,11 @@ struct BuilderState {
     /// joueur a choisi d'éditer). `None` pour un trou neuf ou chargé en
     /// "Dupliquer" — sauvegarde normale dans la bibliothèque à chaque fois.
     source_path: Option<PathBuf>,
+    /// Ancre du rectangle en cours de sélection en mode bloc
+    /// (`BuilderMode::BlockSelect`, voir `R`) — `Some` tant que ce mode est
+    /// actif, le curseur (`cursor`) formant le coin opposé. `None` en
+    /// dehors de ce mode.
+    block_anchor: Option<Pos>,
 }
 
 impl BuilderState {
@@ -1118,6 +1128,7 @@ impl BuilderState {
             quit_confirm: false,
             exit_confirm: false,
             source_path: None,
+            block_anchor: None,
         }
     }
 
@@ -1146,6 +1157,7 @@ impl BuilderState {
             quit_confirm: false,
             exit_confirm: false,
             source_path,
+            block_anchor: None,
         }
     }
 
@@ -1190,6 +1202,43 @@ impl BuilderState {
         count
     }
 
+    /// Remplace d'un coup tout le rectangle entre `block_anchor` et
+    /// `cursor` (bornes inclusives, peu importe leur ordre) par `terrain`
+    /// — voir `BuilderMode::BlockSelect`. Contrairement à
+    /// `fill_out_of_bounds`, écrase n'importe quel terrain déjà présent
+    /// (c'est le but du mode bloc), à l'exception du tee et du trou,
+    /// jamais touchés même s'ils tombent dans la zone couverte — on
+    /// commence généralement par les placer, ce serait dommage de les
+    /// perdre en dessinant un gros bloc de terrain par-dessus ensuite.
+    /// `None` (pas d'ancre, mode pas actif) ne fait rien. Renvoie le
+    /// nombre de cases effectivement changées.
+    fn fill_block(&mut self, terrain: TerrainKind) -> usize {
+        let Some(anchor) = self.block_anchor else { return 0 };
+        let x0 = anchor.x.min(self.cursor.x);
+        let x1 = anchor.x.max(self.cursor.x);
+        let y0 = anchor.y.min(self.cursor.y);
+        let y1 = anchor.y.max(self.cursor.y);
+
+        let mut changed = Vec::new();
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let current = self.tiles[y][x];
+                if matches!(current, TerrainKind::Tee | TerrainKind::Hole) {
+                    continue;
+                }
+                if current != terrain {
+                    changed.push((Pos { x, y }, current));
+                    self.tiles[y][x] = terrain;
+                }
+            }
+        }
+        let count = changed.len();
+        if count > 0 {
+            self.undo_stack.push(UndoEntry::Block(changed));
+        }
+        count
+    }
+
     fn advance_cursor(&mut self) {
         if self.cursor.x + 1 < self.width {
             self.cursor.x += 1;
@@ -1216,6 +1265,14 @@ impl BuilderState {
                 }
                 for pos in positions {
                     self.tiles[pos.y][pos.x] = TerrainKind::OutOfBounds;
+                }
+            }
+            Some(UndoEntry::Block(cells)) => {
+                if let Some(&(last_pos, _)) = cells.last() {
+                    self.cursor = last_pos;
+                }
+                for (pos, old) in cells {
+                    self.tiles[pos.y][pos.x] = old;
                 }
             }
             None => {}
@@ -1419,6 +1476,7 @@ fn setup_builder<B: ratatui::backend::Backend>(
                 BuilderView {
                     tiles: &blank_tiles,
                     cursor: None,
+                    block_anchor: None,
                     viewport_w: columns[1].width.saturating_sub(2) as usize,
                     viewport_h: columns[1].height.saturating_sub(2) as usize,
                 },
@@ -1465,6 +1523,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                     cursor: state.cursor,
                     grid_height: state.height,
                     mode: state.mode,
+                    block_anchor: state.block_anchor,
                     text_input: &state.text_input,
                     pending_save_name: state
                         .pending_save_path
@@ -1482,6 +1541,7 @@ fn run_builder<B: ratatui::backend::Backend>(
                 BuilderView {
                     tiles: &state.tiles,
                     cursor: Some(state.cursor),
+                    block_anchor: state.block_anchor,
                     viewport_w: columns[1].width.saturating_sub(2) as usize,
                     viewport_h: columns[1].height.saturating_sub(2) as usize,
                 },
@@ -1518,6 +1578,10 @@ fn run_builder<B: ratatui::backend::Backend>(
                             KeyCode::Char('u') | KeyCode::Char('U') => state.undo(),
                             KeyCode::Char('c') | KeyCode::Char('C') => {
                                 state.mode = BuilderMode::FillingBackground;
+                            }
+                            KeyCode::Char('r') | KeyCode::Char('R') => {
+                                state.block_anchor = Some(state.cursor);
+                                state.mode = BuilderMode::BlockSelect;
                             }
                             KeyCode::Char('n') | KeyCode::Char('N') => {
                                 state.text_input.clear();
@@ -1679,6 +1743,30 @@ fn run_builder<B: ratatui::backend::Backend>(
                                     Lang::En => format!("Filled {count} cells."),
                                     Lang::Fr => format!("{count} cases comblées."),
                                 });
+                                state.mode = BuilderMode::Drawing;
+                            }
+                        }
+                        _ => {}
+                    },
+                    BuilderMode::BlockSelect => match key.code {
+                        KeyCode::Esc => {
+                            state.block_anchor = None;
+                            state.mode = BuilderMode::Drawing;
+                        }
+                        KeyCode::Up => state.move_cursor(0, -1),
+                        KeyCode::Down => state.move_cursor(0, 1),
+                        KeyCode::Left => state.move_cursor(-1, 0),
+                        KeyCode::Right => state.move_cursor(1, 0),
+                        KeyCode::Char(c) => {
+                            if let Some(terrain) = terrain_from_builder_key(c) {
+                                let count = state.fill_block(terrain);
+                                state.message = Some(match state.lang {
+                                    Lang::En if count == 0 => "Nothing to fill.".to_string(),
+                                    Lang::Fr if count == 0 => "Rien à combler.".to_string(),
+                                    Lang::En => format!("Filled {count} cells."),
+                                    Lang::Fr => format!("{count} cases comblées."),
+                                });
+                                state.block_anchor = None;
                                 state.mode = BuilderMode::Drawing;
                             }
                         }
@@ -2961,6 +3049,114 @@ mod tests {
             vec![TerrainKind::Tee, TerrainKind::OutOfBounds],
             "le tee peint avant le comblement doit rester intact"
         );
+    }
+
+    #[test]
+    fn fill_block_overwrites_the_rectangle_between_anchor_and_cursor() {
+        let mut builder = BuilderState::new(4, Lang::En);
+        builder.width = 4;
+        builder.height = 3;
+        builder.tiles = vec![vec![TerrainKind::Fairway; 4]; 3];
+        builder.block_anchor = Some(Pos { x: 1, y: 0 });
+        builder.cursor = Pos { x: 2, y: 1 };
+
+        let count = builder.fill_block(TerrainKind::Bunker);
+
+        assert_eq!(count, 4, "les 4 cases du rectangle 2x2 doivent être comptées");
+        assert_eq!(
+            builder.tiles,
+            vec![
+                vec![TerrainKind::Fairway, TerrainKind::Bunker, TerrainKind::Bunker, TerrainKind::Fairway],
+                vec![TerrainKind::Fairway, TerrainKind::Bunker, TerrainKind::Bunker, TerrainKind::Fairway],
+                vec![TerrainKind::Fairway, TerrainKind::Fairway, TerrainKind::Fairway, TerrainKind::Fairway],
+            ]
+        );
+    }
+
+    #[test]
+    fn fill_block_works_regardless_of_which_corner_is_the_anchor() {
+        // L'ancre peut être n'importe quel coin par rapport au curseur —
+        // le rectangle doit rester le même.
+        let mut builder = BuilderState::new(4, Lang::En);
+        builder.width = 3;
+        builder.height = 3;
+        builder.tiles = vec![vec![TerrainKind::Fairway; 3]; 3];
+        builder.block_anchor = Some(Pos { x: 2, y: 2 }); // coin bas-droit
+        builder.cursor = Pos { x: 0, y: 0 }; // coin haut-gauche
+
+        let count = builder.fill_block(TerrainKind::Water);
+
+        assert_eq!(count, 9, "toute la grille 3x3 doit être couverte");
+        assert!(builder.tiles.iter().flatten().all(|t| *t == TerrainKind::Water));
+    }
+
+    #[test]
+    fn fill_block_never_overwrites_the_tee_or_the_hole() {
+        let mut builder = BuilderState::new(4, Lang::En);
+        builder.width = 3;
+        builder.height = 1;
+        builder.tiles = vec![vec![TerrainKind::Tee, TerrainKind::Fairway, TerrainKind::Hole]];
+        builder.block_anchor = Some(Pos { x: 0, y: 0 });
+        builder.cursor = Pos { x: 2, y: 0 };
+
+        let count = builder.fill_block(TerrainKind::Bunker);
+
+        assert_eq!(count, 1, "seule la case du milieu doit changer");
+        assert_eq!(
+            builder.tiles[0],
+            vec![TerrainKind::Tee, TerrainKind::Bunker, TerrainKind::Hole],
+            "le tee et le trou ne doivent jamais être écrasés par le mode bloc"
+        );
+    }
+
+    #[test]
+    fn fill_block_does_not_record_undo_when_nothing_changes() {
+        let mut builder = BuilderState::new(4, Lang::En);
+        builder.width = 1;
+        builder.height = 1;
+        builder.tiles = vec![vec![TerrainKind::Fairway]];
+        builder.block_anchor = Some(Pos { x: 0, y: 0 });
+        builder.cursor = Pos { x: 0, y: 0 };
+
+        let count = builder.fill_block(TerrainKind::Fairway); // déjà ce terrain
+
+        assert_eq!(count, 0);
+        assert!(builder.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn fill_block_without_an_anchor_is_a_no_op() {
+        let mut builder = BuilderState::new(4, Lang::En);
+        builder.width = 2;
+        builder.height = 2;
+        builder.tiles = vec![vec![TerrainKind::Fairway; 2]; 2];
+        assert!(builder.block_anchor.is_none());
+
+        let count = builder.fill_block(TerrainKind::Water);
+
+        assert_eq!(count, 0);
+        assert!(builder.tiles.iter().flatten().all(|t| *t == TerrainKind::Fairway));
+    }
+
+    #[test]
+    fn undo_reverts_a_whole_block_fill_restoring_each_cells_original_terrain() {
+        let mut builder = BuilderState::new(4, Lang::En);
+        builder.width = 3;
+        builder.height = 2;
+        let original = vec![
+            vec![TerrainKind::Fairway, TerrainKind::Rough, TerrainKind::Bunker],
+            vec![TerrainKind::Water, TerrainKind::Green, TerrainKind::Tree],
+        ];
+        builder.tiles = original.clone();
+        builder.block_anchor = Some(Pos { x: 0, y: 0 });
+        builder.cursor = Pos { x: 2, y: 1 };
+
+        builder.fill_block(TerrainKind::Bunker);
+        assert!(builder.tiles.iter().flatten().all(|t| *t == TerrainKind::Bunker));
+
+        builder.undo();
+
+        assert_eq!(builder.tiles, original, "un seul undo doit restaurer le terrain exact de chaque case");
     }
 
     #[test]

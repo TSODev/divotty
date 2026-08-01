@@ -44,6 +44,13 @@ pub enum BuilderMode {
     /// affiché reste quand même mis à jour, ces deux changements sont
     /// indépendants).
     RenamingFile,
+    /// Mode bloc (voir `R`) : ancré sur la case où il a été activé
+    /// (`BuilderState::block_anchor`), les flèches déplacent le curseur qui
+    /// forme le coin opposé du rectangle — une touche de terrain remplit
+    /// tout le rectangle d'un coup (jamais le tee/le trou, préservés même
+    /// dans la zone couverte) et repasse en dessin normal. `Échap` annule
+    /// sans rien changer.
+    BlockSelect,
 }
 
 pub(crate) fn write_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
@@ -340,6 +347,7 @@ impl<'a> Widget for HolePreviewView<'a> {
                     BuilderView {
                         tiles: &tiles,
                         cursor: None,
+                        block_anchor: None,
                         viewport_w: map_area.width as usize,
                         viewport_h: map_area.height as usize,
                     }
@@ -448,6 +456,9 @@ pub struct BuilderSidebarView<'a> {
     pub cursor: Pos,
     pub grid_height: usize,
     pub mode: BuilderMode,
+    /// Ancre du rectangle en mode bloc (`BuilderMode::BlockSelect`),
+    /// affichée dans le panneau Contrôles.
+    pub block_anchor: Option<Pos>,
     pub text_input: &'a str,
     /// Nom de fichier (sans extension) en attente de confirmation
     /// d'écrasement, affiché dans `BuilderMode::ConfirmOverwrite`.
@@ -659,15 +670,26 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                         Style::default().fg(Color::White),
                     ));
                 }
+                BuilderMode::BlockSelect => {
+                    if let Some(anchor) = self.block_anchor {
+                        controls_lines.push(Line::styled(
+                            match self.lang {
+                                Lang::En => format!("Block from x={} y={}", anchor.x, anchor.y),
+                                Lang::Fr => format!("Bloc depuis x={} y={}", anchor.x, anchor.y),
+                            },
+                            Style::default().fg(Color::Gray),
+                        ));
+                    }
+                }
             }
             let base: &str = match self.mode {
                 BuilderMode::Drawing => match self.lang {
                     Lang::En => {
-                        "letters  paint\n↑↓←→  move\nU  undo\nC  fill\nN  rename\n\
+                        "letters  paint\n↑↓←→  move\nU  undo\nC  fill\nR  block\nN  rename\n\
                          S  save\nEsc Esc  menu\nqq  quit"
                     }
                     Lang::Fr => {
-                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nC  combler\n\
+                        "lettres  peindre\n↑↓←→  déplacer\nU  annuler\nC  combler\nR  bloc\n\
                          N  renommer\nS  sauver\nÉchap Échap  menu\nqq  quitter"
                     }
                 },
@@ -691,6 +713,10 @@ impl<'a> Widget for BuilderSidebarView<'a> {
                     Lang::En => "(no extension)\nEnter  confirm\nEsc  keep name",
                     Lang::Fr => "(sans extension)\nEntrée  valider\nÉchap  garder nom",
                 },
+                BuilderMode::BlockSelect => match self.lang {
+                    Lang::En => "↑↓←→  resize\nletters  fill\nEsc  cancel",
+                    Lang::Fr => "↑↓←→  redimensionner\nlettres  remplir\nÉchap  annuler",
+                },
             };
             controls_lines.extend(
                 base.lines()
@@ -712,6 +738,10 @@ pub struct BuilderView<'a> {
     /// voir `HolePreviewView`) — le centrage retombe alors sur le milieu
     /// de la grille plutôt que sur une position de curseur.
     pub cursor: Option<Pos>,
+    /// Coin opposé du curseur en mode bloc (`BuilderMode::BlockSelect`,
+    /// voir `main.rs`) — `Some` surligne tout le rectangle entre les deux
+    /// (aperçu avant de remplir), `None` en dehors de ce mode.
+    pub block_anchor: Option<Pos>,
     pub viewport_w: usize,
     pub viewport_h: usize,
 }
@@ -732,6 +762,18 @@ impl<'a> Widget for BuilderView<'a> {
 
         let center = self.cursor.unwrap_or(Pos { x: grid_w / 2, y: grid_h / 2 });
 
+        // Rectangle en attente en mode bloc : bornes inclusives entre
+        // l'ancre et le curseur, peu importe leur ordre (l'ancre peut être
+        // n'importe quel coin par rapport au curseur).
+        let block_bounds = self.block_anchor.zip(self.cursor).map(|(anchor, cursor)| {
+            (
+                anchor.x.min(cursor.x),
+                anchor.x.max(cursor.x),
+                anchor.y.min(cursor.y),
+                anchor.y.max(cursor.y),
+            )
+        });
+
         let view_w = (inner.width as usize).min(self.viewport_w).max(1);
         let view_h = (inner.height as usize).min(self.viewport_h).max(1);
         let viewport = Viewport { width: view_w, height: view_h };
@@ -749,6 +791,9 @@ impl<'a> Widget for BuilderView<'a> {
                 let terrain = self.tiles[gy][gx];
                 let (ch, color) = terrain_style(terrain);
                 let is_cursor = self.cursor == Some(Pos { x: gx, y: gy });
+                let is_in_block = block_bounds.is_some_and(|(x0, x1, y0, y1)| {
+                    gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1
+                });
 
                 let x = inner.x + margin_x + col as u16;
                 let y = inner.y + margin_y + row as u16;
@@ -760,6 +805,8 @@ impl<'a> Widget for BuilderView<'a> {
                         .fg(Color::Black)
                         .bg(Color::LightYellow)
                         .add_modifier(Modifier::BOLD)
+                } else if is_in_block {
+                    Style::default().fg(color).bg(Color::DarkGray)
                 } else {
                     Style::default().fg(color)
                 };
