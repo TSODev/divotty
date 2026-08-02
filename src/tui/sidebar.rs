@@ -310,7 +310,7 @@ impl<'a> Widget for SidebarState<'a> {
                 Constraint::Length(5), // Infos du trou
                 Constraint::Length(score_panel_height), // Score
                 Constraint::Length(5), // Club
-                Constraint::Length(4), // Dernier coup
+                Constraint::Length(5), // Dernier coup
                 Constraint::Length(4), // Visée (aim + vent)
                 Constraint::Min(0),    // Contrôles
             ])
@@ -401,6 +401,15 @@ impl<'a> Widget for SidebarState<'a> {
             .last_die
             .map(|d| d.to_string())
             .unwrap_or_else(|| "—".to_string());
+        let club_distance_line = self
+            .last_shot
+            .map(|shot| {
+                Line::styled(
+                    format!("{} · {}", club_label(shot.club, self.lang), shot.distance.round() as i32),
+                    DIM,
+                )
+            })
+            .unwrap_or_else(|| Line::from(""));
         let message_line = if self.just_saved {
             Line::styled(l.saved_message, bold(Color::Cyan))
         } else {
@@ -420,7 +429,11 @@ impl<'a> Widget for SidebarState<'a> {
             buf,
             l.panel_last_shot,
             LAST_SHOT_ACCENT,
-            vec![Line::styled(format!("{}: {}", l.die, die_text), NEUTRAL), message_line],
+            vec![
+                Line::styled(format!("{}: {}", l.die, die_text), NEUTRAL),
+                club_distance_line,
+                message_line,
+            ],
         );
 
         let angle_deg = self.aim.dy.atan2(self.aim.dx).to_degrees();

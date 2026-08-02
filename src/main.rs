@@ -2596,6 +2596,8 @@ mod tests {
             penalty_strokes: 0,
             holed: false,
             dropped: false,
+            distance: 10.0,
+            club: Club::Iron,
         });
         assert!(!state.finished(), "coup sur le fairway, pas fini");
 
@@ -2605,6 +2607,8 @@ mod tests {
             penalty_strokes: 0,
             holed: true,
             dropped: false,
+            distance: 2.0,
+            club: Club::Putter,
         });
         assert!(state.finished(), "coup dans le trou, doit être fini");
     }

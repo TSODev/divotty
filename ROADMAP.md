@@ -314,21 +314,26 @@
       terminant sur l'atterrissage réel) et vérifié en tmux (mouvement
       visible case par case à un rythme régulier, accélération immédiate
       sur une touche, score/dernier coup appliqués seulement à la fin).
-- [ ] Panneau "Dernier coup" enrichi : distance déduite + club utilisé, en
-      plus du dé déjà affiché (ex. `Driver — Dé: 5 — Distance: 18 — Balle
-      sur le fairway` plutôt que les infos séparées d'aujourd'hui).
-      **Plan** :
-      1. Ajouter `distance: f32` et `club: Club` à `ShotResult`
-         (`src/core/shot.rs`) — `resolve_shot` calcule déjà
-         `effective_distance`, il suffit de la exposer plutôt que de la
-         jeter ; le club vient de `shot.club`, déjà connu au moment de
-         l'appel.
-      2. `src/tui/sidebar.rs::shot_message` : inclure `club_label(...)` et
-         la distance (arrondie) dans le message construit à partir du
-         `ShotResult` stocké.
-      3. Vérifier les tests existants qui construisent `ShotResult` (tous
-         passent par `resolve_shot`, pas de construction manuelle à
-         corriger a priori).
+- [x] Panneau "Dernier coup" enrichi : distance déduite + club utilisé, en
+      plus du dé déjà affiché. `ShotResult` (`src/core/shot.rs`) porte
+      désormais `distance: f32` (l'`effective_distance` déjà calculée par
+      `resolve_shot`, jusque-là jetée) et `club: Club` (copié depuis
+      `shot.club`) — capturé sur le `ShotResult` lui-même plutôt que relu
+      depuis `GameState::club` au moment de l'affichage, pour rester exact
+      si le joueur a changé de club depuis ce coup. Réalisé différemment du
+      plan initial (une seule ligne combinée façon `Driver — Dé: 5 —
+      Distance: 18 — Balle sur le fairway`) : ce format dépassait largement
+      les ~24 caractères utiles du panneau une fois affiché en vrai, donc
+      scindé en trois lignes courtes à la place — `Die: N`, `{Club} ·
+      {distance arrondie}` (nouvelle ligne), puis le message de terrain
+      inchangé — plutôt qu'une ligne unique tronquée. Le panneau "Dernier
+      coup" passe de 4 à 5 lignes de haut pour loger la ligne
+      supplémentaire (`Constraint::Length` dans `SidebarState::render`),
+      au détriment du panneau Contrôles juste en dessous (`Min(0)`, absorbe
+      la différence sans le casser). Testé (deux constructions manuelles de
+      `ShotResult` dans les tests de `main.rs` mises à jour) et vérifié en
+      tmux (`Driver · 8` affiché au-dessus de `Ball on the fairway` après
+      un coup, bordures et alignement intacts).
 
 ## v0.4 — Contenu et outillage
 - [ ] Au moins un parcours complet à 9 trous, dessiné et testé — en variant

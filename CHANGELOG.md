@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The "Last shot" panel now shows which club was used and how far the
+  ball actually traveled, alongside the die roll and the landing message
+  it already showed — e.g. "Driver · 8" above "Ball on the fairway",
+  rather than just the die roll.
 - The hole builder can now paint a whole rectangle of terrain at once:
   press `R` to anchor a block on the current cell, move the opposite
   corner with the arrow keys, press a terrain key to pick what to fill it

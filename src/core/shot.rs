@@ -161,6 +161,12 @@ pub struct ShotResult {
     pub holed: bool,
     /// Vrai si un drop a été appliqué (balle relancée depuis la position de départ du coup).
     pub dropped: bool,
+    /// Distance effective parcourue par ce coup (club + terrain de départ,
+    /// avant dispersion/vent), exposée pour l'affichage (panneau Dernier coup).
+    pub distance: f32,
+    /// Club utilisé pour ce coup — capturé ici plutôt que relu depuis l'état
+    /// courant du joueur, qui peut avoir changé de club depuis.
+    pub club: Club,
 }
 
 /// Combine la dispersion de base d'un club, le multiplicateur du terrain de
@@ -445,6 +451,8 @@ pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, wind: Wind, rng: &mut im
         penalty_strokes,
         holed,
         dropped,
+        distance: effective_distance,
+        club: shot.club,
     }
 }
 
