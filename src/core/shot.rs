@@ -167,7 +167,22 @@ pub struct ShotResult {
     /// Club utilisé pour ce coup — capturé ici plutôt que relu depuis l'état
     /// courant du joueur, qui peut avoir changé de club depuis.
     pub club: Club,
+    /// Vrai si ce coup a subi un "mishit" (voir `MISHIT_CHANCE`) : la
+    /// dispersion effective a été nettement amplifiée pour ce coup précis
+    /// plutôt que pour tous les coups de ce club.
+    pub mishit: bool,
 }
+
+/// Probabilité qu'un coup de Driver soit un "mishit" — un raté ponctuel où
+/// la dispersion effective est nettement amplifiée, plutôt qu'un bruit
+/// permanent ajouté à tous les coups de Driver (qui aurait aussi rendu les
+/// bons coups moins bons). Seul le Driver est concerné : c'est le club le
+/// plus long, celui où une erreur de swing coûte le plus cher et où le
+/// joueur s'y attend le moins puisque la plupart de ses coups restent
+/// propres. `MISHIT_DISPERSION_MULT` fixe l'ampleur du raté quand il
+/// survient.
+const MISHIT_CHANCE: f64 = 1.0 / 6.0;
+const MISHIT_DISPERSION_MULT: f32 = 2.5;
 
 /// Combine la dispersion de base d'un club, le multiplicateur du terrain de
 /// départ et la sensibilité du club à ce terrain pour obtenir la dispersion
@@ -387,11 +402,20 @@ pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, wind: Wind, rng: &mut im
     } else {
         shot.club.base_dispersion()
     };
-    let effective_dispersion = effective_dispersion(
+    let mut effective_dispersion = effective_dispersion(
         base_dispersion,
         profile.dispersion_mult,
         shot.club.terrain_sensitivity(),
     );
+
+    // Mishit occasionnel du Driver : plutôt qu'un bruit permanent sur tous
+    // les coups (qui aurait aussi rendu les bons coups moins bons), un tirage
+    // à part amplifie ponctuellement la dispersion effective. Seul le Driver
+    // est concerné, jamais les autres clubs.
+    let mishit = shot.club == Club::Driver && rng.gen_bool(MISHIT_CHANCE);
+    if mishit {
+        effective_dispersion *= MISHIT_DISPERSION_MULT;
+    }
 
     // Déviation aléatoire de la trajectoire : un angle et une amplitude
     // tirés dans le rayon de dispersion effectif.
@@ -453,6 +477,7 @@ pub fn resolve_shot(hole: &Hole, from: Pos, shot: Shot, wind: Wind, rng: &mut im
         dropped,
         distance: effective_distance,
         club: shot.club,
+        mishit,
     }
 }
 
@@ -880,19 +905,28 @@ mod tests {
         }
     }
 
-    /// Trou fairway (colonnes 0..44), puis une bande d'eau (44..70), sur une
-    /// seule ligne — pour des tests de drop déterministes sur une
-    /// trajectoire purement horizontale.
+    /// Trou fairway (colonnes 0..44), puis une bande d'eau (44..70) — sur
+    /// plusieurs lignes autour du centre (`WATER_BAND_HALF_HEIGHT`), pas une
+    /// seule, pour que le test reste déterministe même avec la déviation
+    /// verticale d'un mishit Driver (voir `MISHIT_DISPERSION_MULT`) : une
+    /// bande d'une seule case de haut serait manquée par n'importe quelle
+    /// déviation verticale suffisante, indépendamment du comportement de
+    /// drop que ce test vérifie réellement.
+    const WATER_BAND_HALF_HEIGHT: usize = 10;
+
     fn hole_with_water_band(water_start: usize, water_end: usize) -> Hole {
+        let center = COURSE_HEIGHT / 2;
         let mut lines = Vec::with_capacity(COURSE_HEIGHT);
         for y in 0..COURSE_HEIGHT {
             let mut row = vec!['.'; COURSE_WIDTH];
-            if y == COURSE_HEIGHT / 2 {
+            if y == center {
                 row[0] = 'D';
+                row[COURSE_WIDTH - 1] = 'H';
+            }
+            if y.abs_diff(center) <= WATER_BAND_HALF_HEIGHT {
                 for x in water_start..water_end {
                     row[x] = '~';
                 }
-                row[COURSE_WIDTH - 1] = 'H';
             }
             lines.push(row.into_iter().collect::<String>());
         }
@@ -932,9 +966,15 @@ mod tests {
         // doit pas s'arrêter dessus (ce serait juste remplacer un obstacle
         // par un autre), mais continuer jusqu'au fairway au-delà.
         let mut hole = hole_with_water_band(45, 70);
-        let row = COURSE_HEIGHT / 2;
-        for x in 40..45 {
-            hole.tiles[row][x] = TerrainKind::Tree;
+        let center = COURSE_HEIGHT / 2;
+        // Bande d'arbres sur la même hauteur que la bande d'eau (voir
+        // `WATER_BAND_HALF_HEIGHT`), pas seulement la ligne centrale, pour
+        // rester sur le chemin réel de la balle même si elle dévie
+        // verticalement (mishit Driver inclus).
+        for y in center.saturating_sub(WATER_BAND_HALF_HEIGHT)..=(center + WATER_BAND_HALF_HEIGHT) {
+            for x in 40..45 {
+                hole.tiles[y][x] = TerrainKind::Tree;
+            }
         }
 
         let shot = Shot {
@@ -1008,5 +1048,75 @@ mod tests {
             assert!(!result.dropped, "une zone à pénalité ne force pas de drop");
             assert_eq!(result.landing, Pos { x: 1, y: 0 });
         }
+    }
+
+    #[test]
+    fn mishit_never_happens_for_a_non_driver_club() {
+        let hole = flat_fairway_hole();
+        let shot = Shot {
+            club: Club::Wood,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 6,
+        };
+        for seed in 0..500u64 {
+            let mut rng = Pcg32::new(seed, seed);
+            let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
+            assert!(!result.mishit, "seul le Driver peut subir un mishit");
+        }
+    }
+
+    #[test]
+    fn mishit_occurs_at_roughly_the_expected_rate_for_the_driver() {
+        let hole = flat_fairway_hole();
+        let shot = Shot {
+            club: Club::Driver,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 6,
+        };
+        let trials = 6000u64;
+        let mishits = (0..trials)
+            .filter(|&seed| {
+                let mut rng = Pcg32::new(seed, seed);
+                resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng).mishit
+            })
+            .count();
+        let rate = mishits as f64 / trials as f64;
+        // Attendu ~1/6 (MISHIT_CHANCE) ; large marge pour rester stable même
+        // si la constante est ajustée légèrement plus tard.
+        assert!(
+            (0.10..0.24).contains(&rate),
+            "taux de mishit observé hors de la fourchette attendue : {rate}"
+        );
+    }
+
+    #[test]
+    fn a_mishit_can_deviate_further_than_any_normal_driver_shot_could() {
+        // Un mishit doit pouvoir dévier davantage que ce qu'un coup normal
+        // pourrait jamais produire (rayon de base, sans amplification) —
+        // sinon l'amplification n'aurait aucun effet observable.
+        let hole = flat_fairway_hole();
+        let shot = Shot {
+            club: Club::Driver,
+            direction: Direction { dx: 1.0, dy: 0.0 },
+            die_roll: 6,
+        };
+        let normal_max_deviation = Club::Driver.base_dispersion();
+        let expected = Pos {
+            x: (hole.tee.x as f32 + shot.direction.dx * shot.club.base_distance(shot.die_roll)).round() as usize,
+            y: (hole.tee.y as f32 + shot.direction.dy * shot.club.base_distance(shot.die_roll)).round() as usize,
+        };
+
+        let worst_mishit_miss = (0..2000u64)
+            .filter_map(|seed| {
+                let mut rng = Pcg32::new(seed, seed);
+                let result = resolve_shot(&hole, hole.tee, shot, Wind::default(), &mut rng);
+                result.mishit.then(|| distance_between(result.landing, expected))
+            })
+            .fold(0.0f32, f32::max);
+
+        assert!(
+            worst_mishit_miss > normal_max_deviation,
+            "le pire mishit observé ({worst_mishit_miss}) ne dépasse pas le rayon normal ({normal_max_deviation})"
+        );
     }
 }

@@ -193,6 +193,17 @@ fn club_label(club: Club, lang: Lang) -> &'static str {
     }
 }
 
+/// Libellé court affiché quand le dernier coup était un "mishit" (voir
+/// `core::shot::MISHIT_CHANCE`) — accolé à la ligne club/distance plutôt
+/// qu'au message de terrain, qui est déjà proche de la limite de largeur du
+/// panneau (voir `shot_message`).
+fn mishit_label(lang: Lang) -> &'static str {
+    match lang {
+        Lang::En => "Mishit!",
+        Lang::Fr => "Raté !",
+    }
+}
+
 /// Nom du terrain tel qu'inséré dans un message ("Ball on {}" / "Balle sur
 /// {}") — l'article est inclus dans la traduction plutôt que géré à part,
 /// pour rester correct dans les deux langues sans logique grammaticale.
@@ -404,10 +415,12 @@ impl<'a> Widget for SidebarState<'a> {
         let club_distance_line = self
             .last_shot
             .map(|shot| {
-                Line::styled(
-                    format!("{} · {}", club_label(shot.club, self.lang), shot.distance.round() as i32),
-                    DIM,
-                )
+                let base = format!("{} · {}", club_label(shot.club, self.lang), shot.distance.round() as i32);
+                if shot.mishit {
+                    Line::styled(format!("{} · {}", base, mishit_label(self.lang)), bold(Color::Yellow))
+                } else {
+                    Line::styled(base, DIM)
+                }
             })
             .unwrap_or_else(|| Line::from(""));
         let message_line = if self.just_saved {

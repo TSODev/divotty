@@ -540,6 +540,24 @@ Fait et testé :
   de chaque case individuellement (contrairement à `Fill`, qui suppose un
   retour au hors-limites) puisque le mode bloc peut écraser n'importe
   quoi — annulable en un seul `U`. Testé et vérifié en tmux.
+- Panneau "Dernier coup" enrichi (voir `ROADMAP.md`) : affiche désormais le
+  club utilisé et la distance parcourue, sur une nouvelle ligne dédiée
+  entre le dé et le message de terrain — capturés directement sur
+  `ShotResult` (`distance`/`club`, nouveaux champs) plutôt que relus depuis
+  l'état courant du joueur, pour rester exacts si le club a changé depuis.
+- Mishit occasionnel du Driver (voir `ROADMAP.md` pour le détail) : signalé
+  par l'utilisateur, la dispersion du Driver ne se sentait presque jamais
+  en jeu. Plutôt qu'augmenter la dispersion de base en continu, `resolve_shot`
+  tire désormais un raté ponctuel (1 chance sur 6, Driver seulement) qui
+  multiplie la dispersion effective de ce coup précis par 2.5 — cohérent
+  avec la direction déjà prise sur le putting/le vent (réduire le RNG pur
+  sur la majorité des coups plutôt que l'inverse). `ShotResult::mishit`
+  (nouveau champ) s'affiche sur la ligne club/distance ci-dessus
+  (`Driver · 24 · Mishit!`, jaune gras). Trois tests existants sur le drop
+  en zone d'eau se sont révélés fragiles à ce changement (bande d'eau/
+  d'arbres peinte sur une seule ligne, sensible à toute déviation
+  verticale) — élargis à une bande de plusieurs lignes pour rester
+  déterministes indépendamment du réglage de dispersion.
 
 Pas encore fait (voir `ROADMAP.md` pour le détail) :
 - Tests d'intégration sur la boucle de jeu complète (`run_loop`, gestion

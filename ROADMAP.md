@@ -334,6 +334,44 @@
       `ShotResult` dans les tests de `main.rs` mises à jour) et vérifié en
       tmux (`Driver · 8` affiché au-dessus de `Ball on the fairway` après
       un coup, bordures et alignement intacts).
+- [x] Mishit occasionnel du Driver (signalé : la dispersion du Driver ne se
+      sentait presque jamais — la plupart des coups restaient sur la bonne
+      trajectoire, alors que c'est le club le plus long, celui qui devrait
+      le plus punir une erreur). Deux pistes envisagées : augmenter
+      `Club::base_dispersion()` du Driver de façon permanente (simple, mais
+      floute *tous* les coups, y compris les bons), ou un raté ponctuel qui
+      amplifie la dispersion d'un seul coup au lieu d'un bruit continu —
+      retenue pour rester dans l'esprit "amusement" (une vraie surprise
+      occasionnelle plutôt qu'un flou permanent), conforme au principe déjà
+      appliqué au putting/vent (réduire le RNG pur sur la majorité des
+      coups, pas l'inverse). `resolve_shot` (`src/core/shot.rs`) tire un
+      coup de dé caché (`MISHIT_CHANCE = 1/6`) uniquement pour le Driver
+      (`shot.club == Club::Driver`) ; en cas de mishit, la dispersion
+      effective est multipliée par `MISHIT_DISPERSION_MULT` (2.5) avant le
+      tirage de déviation habituel — jamais les autres clubs, et jamais
+      l'aperçu de visée (`preview_shot`, sans RNG, reste un guide comme
+      déjà pour le vent, pas une prédiction exacte). `ShotResult` porte un
+      nouveau champ `mishit: bool`, affiché sur la ligne club/distance
+      ajoutée juste au-dessus (voir item précédent) plutôt que sur le
+      message de terrain déjà proche de la limite de largeur du panneau —
+      ex. `Driver · 24 · Mishit!`, en jaune gras au lieu du gris neutre
+      habituel de cette ligne.
+      Trois tests dédiés (`core::shot::tests`) : les autres clubs ne
+      subissent jamais de mishit (500 seeds), le taux observé sur 6000
+      seeds reste dans une fourchette large autour de 1/6, et le pire
+      mishit observé sur 2000 seeds dévie bien plus qu'aucun coup normal ne
+      le pourrait (rayon de base, sans amplification) — preuve que
+      l'amplification a un effet réel, pas juste calculée. Trois tests
+      existants sur le drop en zone d'eau (`water_drop_*`) se sont révélés
+      fragiles à ce changement : ils ne peignaient une bande d'eau/d'arbres
+      que sur une seule ligne, ce qui les rendait sensibles à *toute*
+      déviation verticale suffisante (mishit ou non) plutôt qu'à un vrai
+      bug — élargis à une bande de plusieurs lignes autour du centre
+      (`WATER_BAND_HALF_HEIGHT`) pour rester déterministes indépendamment
+      du réglage exact de la dispersion. Vérifié en tmux (rejouer le trou
+      de démo plusieurs fois avec `R` jusqu'à obtenir un mishit sur un
+      Driver : panneau affichant bien `Driver · 24 · Mishit!`, bordures et
+      alignement intacts).
 
 ## v0.4 — Contenu et outillage
 - [ ] Au moins un parcours complet à 9 trous, dessiné et testé — en variant

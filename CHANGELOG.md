@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The Driver now occasionally "mishits": about 1 in 6 drives gets a much
+  wider dispersion than usual for that one shot, rather than every drive
+  being slightly less accurate all the time. Only the Driver is affected.
+  When it happens, the "Last shot" panel calls it out (e.g.
+  "Driver · 24 · Mishit!") so a bad drive reads as a notable event rather
+  than an unexplained miss.
 - The "Last shot" panel now shows which club was used and how far the
   ball actually traveled, alongside the die roll and the landing message
   it already showed — e.g. "Driver · 8" above "Ball on the fairway",
