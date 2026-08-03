@@ -114,6 +114,13 @@ can't go below 3 (any lower would make even a Putter nearly unable to
 reach the hole) and resets to full whenever you change club or start a
 new hole, so it's a per-shot fine-tune rather than a standing preference.
 
+The Last Shot panel shows which club was used and how far the ball
+actually traveled, above the terrain message. The Driver occasionally
+"mishits" (about 1 in 6 drives): a much wider dispersion than usual for
+that one shot only, called out right there (e.g. `Driver · 24 ·
+Mishit!`) so a bad drive reads as a notable event rather than an
+unexplained miss — every other club is unaffected.
+
 Putting rewards a good approach shot: the Putter's accuracy scales with
 how close the ball already is to the hole, so a short putt is close to
 automatic while a long lag putt stays a real gamble. A putt that rolls
@@ -248,9 +255,10 @@ See `courses/demo/` for a complete, working example.
 ## Current state
 
 Shot resolution engine tested (dice + club + terrain + seedable random
-dispersion, per-club terrain sensitivity, distance-scaled putting
-precision with fall-in-on-overshoot, obstacle fly-over, wind drift, a
-backtracking drop on water/out-of-bounds), club distances calibrated as
+dispersion, per-club terrain sensitivity, an occasional Driver mishit,
+distance-scaled putting precision with fall-in-on-overshoot, obstacle
+fly-over, wind drift, a backtracking drop on water/out-of-bounds), club
+distances calibrated as
 realistic ratios of the Driver, course parser validated with unit tests,
 range/dispersion preview before playing with a visible ball-travel
 animation, three-level map zoom (normal/in/out) with an off-screen hole
